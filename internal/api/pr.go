@@ -164,3 +164,12 @@ func (c *Client) AddReviewer(ctx context.Context, owner, project string, number 
 	path := fmt.Sprintf("%s/%d/reviewers", pullRequestsBasePath(owner, project), number)
 	return c.DoJSON(ctx, http.MethodPost, path, nil, nil)
 }
+
+// RemoveReviewer는 DELETE .../pull-requests/{number}/reviewers를 호출한다(yona-wiki P3-02
+// 12라운드 신설 — 서버는 removeReviewer 서비스/레거시 엔드포인트가 원래부터 있었지만 v1 REST
+// API 어댑터가 없어 "리뷰어 등록은 되는데 취소는 안 되는" 갭이었다). AddReviewer와 동일하게
+// 인증된 본인의 리뷰어 등록을 취소하는 자기등록 해제 방식이라 요청 본문이 없다.
+func (c *Client) RemoveReviewer(ctx context.Context, owner, project string, number int64) error {
+	path := fmt.Sprintf("%s/%d/reviewers", pullRequestsBasePath(owner, project), number)
+	return c.DoJSON(ctx, http.MethodDelete, path, nil, nil)
+}

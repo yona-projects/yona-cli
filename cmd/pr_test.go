@@ -116,6 +116,25 @@ func TestPRReview_AddsSelfAsReviewer(t *testing.T) {
 	assert.Contains(t, out, "리뷰어로 등록")
 }
 
+// TestPRReview_RemoveUnregistersReviewer — 12라운드 추가: 서버에 removeReviewer가 원래부터
+// 있었는데 등록 취소를 할 CLI 명령이 없던 갭을 --remove 플래그로 메운다.
+func TestPRReview_RemoveUnregistersReviewer(t *testing.T) {
+	isolateConfigDir(t)
+	var gotMethod string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		assert.Equal(t, "/api/v1/projects/acme/widgets/pull-requests/1/reviewers", r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	out, err := runCLI(t, "", "pr", "review", "1", "--remove", "--server", server.URL, "--token", "t", "--repo", "acme/widgets")
+
+	require.NoError(t, err)
+	assert.Equal(t, http.MethodDelete, gotMethod)
+	assert.Contains(t, out, "등록을 취소")
+}
+
 func TestPREdit_SendsUpdatedTitleAndBody(t *testing.T) {
 	isolateConfigDir(t)
 	var gotMethod string

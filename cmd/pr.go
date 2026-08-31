@@ -423,13 +423,16 @@ func newPRCommentCmd(ctx *cmdContext) *cobra.Command {
 	return cmd
 }
 
-// yona-wiki 계획 문서 주의사항 그대로: 이 서버의 addReviewer는 "리뷰어를 지정"하는 게 아니라
-// 인증된 본인을 리뷰어로 자기등록하는 동작이다(PullRequestController.addReviewer 참고).
+// yona-wiki 계획 문서 주의사항 그대로: 이 서버의 addReviewer/removeReviewer는 "리뷰어를 지정"하는
+// 게 아니라 인증된 본인을 리뷰어로 자기등록/등록취소하는 동작이다(PullRequestController.
+// addReviewer/removeReviewer 참고). --remove는 12라운드에서 추가 — 서버에 removeReviewer가
+// 원래부터 있었는데 등록 취소를 할 CLI 명령이 없던 갭을 메운다.
 func newPRReviewCmd(ctx *cmdContext) *cobra.Command {
 	var repo string
+	var remove bool
 	cmd := &cobra.Command{
 		Use:   "review <number>",
-		Short: "본인을 해당 풀 리퀘스트의 리뷰어로 등록한다",
+		Short: "본인을 해당 풀 리퀘스트의 리뷰어로 등록(--remove 시 등록 취소)한다",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			owner, project, err := resolveRepo(cmd, repo)
@@ -444,6 +447,13 @@ func newPRReviewCmd(ctx *cmdContext) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if remove {
+				if err := client.RemoveReviewer(cmd.Context(), owner, project, number); err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "풀 리퀘스트 #%d의 리뷰어 등록을 취소했습니다.\n", number)
+				return nil
+			}
 			if err := client.AddReviewer(cmd.Context(), owner, project, number); err != nil {
 				return err
 			}
@@ -452,6 +462,7 @@ func newPRReviewCmd(ctx *cmdContext) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&repo, "repo", "R", "", `대상 프로젝트, "owner/project" 형식 (생략 시 현재 디렉터리의 git origin remote로 자동감지)`)
+	cmd.Flags().BoolVar(&remove, "remove", false, "리뷰어 등록을 취소한다")
 	return cmd
 }
 
