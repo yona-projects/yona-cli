@@ -116,13 +116,18 @@ func newLabelEditCmd(ctx *cmdContext) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			label, err := client.UpdateLabel(cmd.Context(), owner, project, id, api.UpdateLabelRequest{
+			// TASK-0421(yona-wiki P3-02 10라운드) — 라벨 수정 엔드포인트
+			// (LabelRestApiController.update -> ProjectViewController.updateLabelForm 위임) 응답
+			// 바디에 "id" 필드가 없어(수정된 라벨 객체 자체가 불완전하게 내려옴) num(label, "id")가
+			// 항상 "-"를 반환해 "라벨 #-을(를) 수정했습니다."로 깨져 나왔다. 서버 응답 형식에
+			// 의존하지 않고 사용자가 입력한 args[0](id)을 그대로 메시지에 쓰는 게 더 간단하고
+			// 안전하다 — 애초에 서버가 뭘 내려주든 사용자가 수정을 요청한 라벨 id는 이미 알고 있다.
+			if _, err := client.UpdateLabel(cmd.Context(), owner, project, id, api.UpdateLabelRequest{
 				Name: name, Color: color, CategoryID: categoryID,
-			})
-			if err != nil {
+			}); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "라벨 #%s을(를) 수정했습니다.\n", num(label, "id"))
+			fmt.Fprintf(cmd.OutOrStdout(), "라벨 #%s을(를) 수정했습니다.\n", args[0])
 			return nil
 		},
 	}
