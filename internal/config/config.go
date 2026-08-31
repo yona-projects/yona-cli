@@ -122,6 +122,20 @@ func (c *Config) RemoveHost(server string) {
 	}
 }
 
+// ErrHostNotRegistered는 "yona server use"에 등록된 적 없는 호스트를 넘겼을 때 반환된다.
+var ErrHostNotRegistered = fmt.Errorf("등록되지 않은 서버입니다 — 먼저 'yona auth login --server <서버>'로 로그인하세요")
+
+// UseHost는 이미 로그인된(토큰이 저장된) 서버로 current host만 전환한다("yona server use") —
+// gh CLI의 "gh auth switch"에 대응하되, 토큰은 그대로 재사용하고 재로그인을 요구하지 않는다.
+// 등록되지 않은 호스트면 ErrHostNotRegistered를 반환한다.
+func (c *Config) UseHost(server string) error {
+	if _, ok := c.Hosts[server]; !ok {
+		return ErrHostNotRegistered
+	}
+	c.CurrentHost = server
+	return nil
+}
+
 // ErrNoHost는 로그인된 서버가 하나도 없을 때 반환된다.
 var ErrNoHost = fmt.Errorf("로그인된 yona 서버가 없습니다 — 먼저 'yona auth login'을 실행하세요")
 

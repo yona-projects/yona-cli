@@ -141,3 +141,25 @@ func TestResolveToken_ErrorsWhenServerHasNoStoredToken(t *testing.T) {
 
 	assert.ErrorIs(t, err, ErrNoHost)
 }
+
+func TestUseHost_SwitchesCurrentHostWhenRegistered(t *testing.T) {
+	withTempConfigDir(t)
+	cfg := &Config{Hosts: map[string]Host{}}
+	cfg.SetHost("https://a.example.com", "token-a")
+	cfg.Hosts["https://b.example.com"] = Host{Token: "token-b"}
+
+	err := cfg.UseHost("https://b.example.com")
+
+	require.NoError(t, err)
+	assert.Equal(t, "https://b.example.com", cfg.CurrentHost)
+	assert.Equal(t, "token-a", cfg.Hosts["https://a.example.com"].Token)
+}
+
+func TestUseHost_ErrorsWhenHostNotRegistered(t *testing.T) {
+	withTempConfigDir(t)
+	cfg := &Config{Hosts: map[string]Host{}}
+
+	err := cfg.UseHost("https://unknown.example.com")
+
+	assert.ErrorIs(t, err, ErrHostNotRegistered)
+}
