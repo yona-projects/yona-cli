@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/search5/yona-cli/internal/gitutil"
 	"github.com/spf13/cobra"
 )
 
@@ -27,16 +28,88 @@ func parseRepo(repo string) (owner string, project string, err error) {
 	return parts[0], parts[1], nil
 }
 
-// printJSON은 --json 플래그가 켜졌을 때 원본 응답 구조를 그대로 예쁘게 출력한다. Issue/PullRequest
-// 응답은 map[string]interface{}로 느슨하게 받으므로, 서버가 실제로 어떤 필드를 내려주는지
-// 있는 그대로 보고 싶을 때 이 경로가 유일한 정확한 수단이다.
-func printJSON(cmd *cobra.Command, v interface{}) error {
-	data, err := json.MarshalIndent(v, "", "  ")
+// resolveRepo는 --repo/-R 플래그 값이 주어지면 그것을 파싱하고, 비어 있으면 현재 디렉터리의 git
+// origin remote로부터 owner/project를 자동감지한다(gh CLI가 "github.com/owner/repo"를 파싱하는
+// 것과 동일한 관례 — yuna clone URL 형식은 TemplateHelper.getCloneUrl() 참고). git이 없거나
+// 저장소 밖이거나 origin이 없으면 "--repo 필수" 오류로 폴백한다.
+func resolveRepo(cmd *cobra.Command, repo string) (owner string, project string, err error) {
+	if repo != "" {
+		return parseRepo(repo)
+	}
+	owner, project, err = gitutil.DetectRepo(cmd.Context())
+	if err != nil {
+		return "", "", fmt.Errorf("--repo(-R) 값이 필요합니다 — 현재 디렉터리에서 대상 프로젝트를 자동감지할 수 없습니다"+
+			"(git 저장소가 아니거나 origin remote가 없음): %w", err)
+	}
+	return owner, project, nil
+}
+
+// printJSON은 --json <fields> 플래그로 지정한 필드만(콤마 구분) 뽑아 JSON으로 출력한다(gh CLI의
+// "--json number,title,state" 관례 — cmd/output.go의 예전 불리언 스위치를 대체). v가 배열/슬라이스면
+// 각 원소마다 같은 필드를 뽑고, 단일 객체면 그 객체에서만 뽑는다. 존재하지 않는 필드명은 조용히
+// 생략한다(오탈자를 쳐도 패닉하지 않고 그 키가 결과에 안 나올 뿐이다).
+func printJSON(cmd *cobra.Command, v interface{}, fields string) error {
+	fieldList := splitFields(fields)
+	if len(fieldList) == 0 {
+		return fmt.Errorf(`--json 플래그는 콤마로 구분한 필드 목록이 필요합니다 (예: --json number,title,state)`)
+	}
+
+	generic, err := toGenericJSON(v)
+	if err != nil {
+		return err
+	}
+	filtered := pickFields(generic, fieldList)
+
+	data, err := json.MarshalIndent(filtered, "", "  ")
 	if err != nil {
 		return fmt.Errorf("JSON으로 변환할 수 없습니다: %w", err)
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), string(data))
 	return nil
+}
+
+func splitFields(fields string) []string {
+	var out []string
+	for _, f := range strings.Split(fields, ",") {
+		f = strings.TrimSpace(f)
+		if f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+func toGenericJSON(v interface{}) (interface{}, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("JSON으로 변환할 수 없습니다: %w", err)
+	}
+	var generic interface{}
+	if err := json.Unmarshal(data, &generic); err != nil {
+		return nil, fmt.Errorf("JSON을 해석할 수 없습니다: %w", err)
+	}
+	return generic, nil
+}
+
+func pickFields(v interface{}, fields []string) interface{} {
+	switch t := v.(type) {
+	case map[string]interface{}:
+		out := map[string]interface{}{}
+		for _, f := range fields {
+			if val, ok := t[f]; ok {
+				out[f] = val
+			}
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(t))
+		for i, item := range t {
+			out[i] = pickFields(item, fields)
+		}
+		return out
+	default:
+		return v
+	}
 }
 
 // str/num은 JPA 엔티티 직접 직렬화 응답(map[string]interface{})에서 흔한 키를 방어적으로
@@ -47,6 +120,19 @@ func str(m map[string]interface{}, key string) string {
 		return fmt.Sprintf("%v", v)
 	}
 	return "-"
+}
+
+// rawStr은 str()과 달리 값이 없을 때 "-" 자리표시자 대신 빈 문자열을 돌려준다 — read-modify-write
+// 방식으로 값을 재전송해야 하는 edit류 명령(예: issue edit, pr edit)에서 "-"가 실제 값으로 오전송되는
+// 사고를 막기 위해 쓴다.
+func rawStr(m map[string]interface{}, key string) string {
+	if v, ok := m[key]; ok && v != nil {
+		if s, ok := v.(string); ok {
+			return s
+		}
+		return fmt.Sprintf("%v", v)
+	}
+	return ""
 }
 
 func num(m map[string]interface{}, key string) string {
