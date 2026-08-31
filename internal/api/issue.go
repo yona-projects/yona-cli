@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 )
 
 // CreateIssueRequest는 web/IssueController.kt의 CreateIssueRequest와 필드가 동일해야 한다
@@ -35,6 +36,13 @@ type CommentRequest struct {
 	ParentCommentID *int64  `json:"parentCommentId,omitempty"`
 }
 
+// TransferIssueRequest는 web/IssueRestApiController.kt의 TransferIssueRequest와 필드가 동일해야
+// 한다 — 대상 프로젝트를 owner/project 이름으로 받아 서버가 내부에서 숫자 id로 resolve한다.
+type TransferIssueRequest struct {
+	TargetOwner   string `json:"targetOwner"`
+	TargetProject string `json:"targetProject"`
+}
+
 // IssuePage는 Spring Data Page<Issue>의 Jackson 기본 직렬화 형태 중 CLI가 실제로 쓰는
 // 필드만 뽑아 담는다. Issue 자체는 JPA 엔티티를 그대로 직렬화하는 응답이라 정확한 필드 구성이
 // 코드 변경에 취약하므로, 각 원소는 map[string]interface{}로 느슨하게 받는다(뷰 명령이
@@ -47,16 +55,44 @@ type IssuePage struct {
 	Size          int64                    `json:"size"`
 }
 
+// IssueListOptions는 GET .../issues의 선택 쿼리 파라미터를 담는다. yona-wiki P3-02 4라운드(Step8.5
+// 서버 보강)가 IssueController.getIssues()에 assignee/label/author를 추가했고, Limit은 서버의
+// Pageable(size 파라미터, IssueController.ITEMS_PER_PAGE_MAX로 상한)을 그대로 활용한다 — 서버가
+// 이미 페이지네이션을 지원하므로 클라이언트 사이드 슬라이싱이 필요 없다(PR/프로젝트 목록과 다른 점).
+type IssueListOptions struct {
+	State    string
+	Assignee string
+	Label    string
+	Author   string
+	Limit    int
+}
+
 func issuesBasePath(owner, project string) string {
 	return fmt.Sprintf("/api/v1/projects/%s/%s/issues", owner, project)
 }
 
-// ListIssues는 GET .../issues[?state=STATE]를 호출한다. state가 빈 문자열이면 쿼리 파라미터를
-// 생략한다(서버 기본 동작에 위임).
-func (c *Client) ListIssues(ctx context.Context, owner, project, state string) (*IssuePage, error) {
+// ListIssues는 GET .../issues[?state=&assignee=&label=&author=&size=]를 호출한다. 값이 비어있는
+// (또는 0인) 옵션은 쿼리 파라미터에서 생략한다(서버 기본 동작에 위임).
+func (c *Client) ListIssues(ctx context.Context, owner, project string, opts IssueListOptions) (*IssuePage, error) {
 	path := issuesBasePath(owner, project)
-	if state != "" {
-		path += "?" + url.Values{"state": {state}}.Encode()
+	q := url.Values{}
+	if opts.State != "" {
+		q.Set("state", opts.State)
+	}
+	if opts.Assignee != "" {
+		q.Set("assignee", opts.Assignee)
+	}
+	if opts.Label != "" {
+		q.Set("label", opts.Label)
+	}
+	if opts.Author != "" {
+		q.Set("author", opts.Author)
+	}
+	if opts.Limit > 0 {
+		q.Set("size", strconv.Itoa(opts.Limit))
+	}
+	if encoded := q.Encode(); encoded != "" {
+		path += "?" + encoded
 	}
 	var out IssuePage
 	if err := c.DoJSON(ctx, http.MethodGet, path, nil, &out); err != nil {
@@ -109,6 +145,27 @@ func (c *Client) CloseIssue(ctx context.Context, owner, project string, number i
 	var out map[string]interface{}
 	path := fmt.Sprintf("%s/%d/close", issuesBasePath(owner, project), number)
 	if err := c.DoJSON(ctx, http.MethodPost, path, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ReopenIssue는 POST .../issues/{number}/reopen을 호출한다(yona-wiki P3-02 4라운드 신설 엔드포인트).
+func (c *Client) ReopenIssue(ctx context.Context, owner, project string, number int64) (map[string]interface{}, error) {
+	var out map[string]interface{}
+	path := fmt.Sprintf("%s/%d/reopen", issuesBasePath(owner, project), number)
+	if err := c.DoJSON(ctx, http.MethodPost, path, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// TransferIssue는 POST .../issues/{number}/transfer를 호출한다(yona-wiki P3-02 4라운드 신설
+// 엔드포인트) — 대상 프로젝트를 owner/project 이름으로 넘기면 서버가 내부에서 숫자 id로 resolve한다.
+func (c *Client) TransferIssue(ctx context.Context, owner, project string, number int64, req TransferIssueRequest) (map[string]interface{}, error) {
+	var out map[string]interface{}
+	path := fmt.Sprintf("%s/%d/transfer", issuesBasePath(owner, project), number)
+	if err := c.DoJSON(ctx, http.MethodPost, path, req, &out); err != nil {
 		return nil, err
 	}
 	return out, nil

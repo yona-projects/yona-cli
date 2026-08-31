@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -21,12 +22,32 @@ func TestListIssues_AppendsStateQueryParam(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL, "t")
-	page, err := client.ListIssues(context.Background(), "acme", "widgets", "OPEN")
+	page, err := client.ListIssues(context.Background(), "acme", "widgets", IssueListOptions{State: "OPEN"})
 
 	require.NoError(t, err)
 	assert.Equal(t, "/api/v1/projects/acme/widgets/issues?state=OPEN", gotURL)
 	require.Len(t, page.Content, 1)
 	assert.EqualValues(t, 1, page.Content[0]["number"])
+}
+
+func TestListIssues_AppendsAssigneeLabelAuthorAndSizeQueryParams(t *testing.T) {
+	var gotQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		_, _ = w.Write([]byte(`{"content":[]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "t")
+	_, err := client.ListIssues(context.Background(), "acme", "widgets", IssueListOptions{
+		Assignee: "bob", Label: "bug", Author: "alice", Limit: 5,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "bob", gotQuery.Get("assignee"))
+	assert.Equal(t, "bug", gotQuery.Get("label"))
+	assert.Equal(t, "alice", gotQuery.Get("author"))
+	assert.Equal(t, "5", gotQuery.Get("size"))
 }
 
 func TestListIssues_OmitsQueryParamWhenStateEmpty(t *testing.T) {
@@ -38,7 +59,7 @@ func TestListIssues_OmitsQueryParamWhenStateEmpty(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL, "t")
-	_, err := client.ListIssues(context.Background(), "acme", "widgets", "")
+	_, err := client.ListIssues(context.Background(), "acme", "widgets", IssueListOptions{})
 
 	require.NoError(t, err)
 	assert.Equal(t, "/api/v1/projects/acme/widgets/issues", gotURL)
@@ -121,4 +142,39 @@ func TestCloseIssue_PostsToClosePath(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "CLOSED", issue["state"])
+}
+
+func TestReopenIssue_PostsToReopenPath(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/projects/acme/widgets/issues/1/reopen", r.URL.Path)
+		assert.Equal(t, http.MethodPost, r.Method)
+		_, _ = w.Write([]byte(`{"state":"OPEN"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "t")
+	issue, err := client.ReopenIssue(context.Background(), "acme", "widgets", 1)
+
+	require.NoError(t, err)
+	assert.Equal(t, "OPEN", issue["state"])
+}
+
+func TestTransferIssue_PostsTargetProjectToTransferPath(t *testing.T) {
+	var gotBody TransferIssueRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/projects/acme/widgets/issues/1/transfer", r.URL.Path)
+		data, _ := io.ReadAll(r.Body)
+		require.NoError(t, json.Unmarshal(data, &gotBody))
+		_, _ = w.Write([]byte(`{"id":1}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "t")
+	_, err := client.TransferIssue(context.Background(), "acme", "widgets", 1, TransferIssueRequest{
+		TargetOwner: "acme", TargetProject: "other",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "acme", gotBody.TargetOwner)
+	assert.Equal(t, "other", gotBody.TargetProject)
 }
