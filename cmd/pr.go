@@ -332,9 +332,15 @@ func newPRReopenCmd(ctx *cmdContext) *cobra.Command {
 	return cmd
 }
 
-// newPRDiffCmd는 "gh pr diff" 대응. 서버 응답(List<FileDiff>)의 신뢰도 관련 주의사항은
-// internal/api/pr.go의 GetPullRequestDiff() 주석 참고 — pathA/pathB/changeType만 안전하게 쓰고
-// 전체 원문은 --json으로만 노출한다.
+// newPRDiffCmd는 "gh pr diff" 대응.
+//
+// yona-wiki P3-02 10라운드(TASK-0419) — 서버가 이전엔 FileDiff 엔티티를 JGit 내부 타입(RawText/
+// EditList/FileMode)까지 그대로 직렬화해 내려보내 pathA/pathB조차 "- -> -"로 깨져 나왔다(서버측
+// 수정: PullRequestController.getDiff()가 FileDiffResponse로 변환해 pathA/pathB/changeType 같은
+// 단순 필드와 서버가 직접 조립한 unified diff 텍스트(patch)만 내려주도록 고쳤다). 이제 pathA/pathB가
+// 안정적으로 채워지므로 요약 헤더로 그대로 쓰고, patch 필드로 실제 "git diff"처럼 변경 내용까지
+// 보여준다(이전엔 파일 목록 한 줄 요약만 보여주고 실제 diff 내용은 --json으로만 볼 수 있었다 —
+// diff 커맨드인데 정작 diff 내용을 안 보여주는 건 별도의 UX 결함이었다).
 func newPRDiffCmd(ctx *cmdContext) *cobra.Command {
 	var repo, jsonFields string
 	cmd := &cobra.Command{
@@ -367,6 +373,9 @@ func newPRDiffCmd(ctx *cmdContext) *cobra.Command {
 			}
 			for _, d := range diffs {
 				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s -> %s\n", str(d, "changeType"), str(d, "pathA"), str(d, "pathB"))
+				if patch := str(d, "patch"); patch != "" && patch != "-" {
+					fmt.Fprintln(cmd.OutOrStdout(), patch)
+				}
 			}
 			return nil
 		},

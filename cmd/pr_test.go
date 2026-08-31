@@ -200,6 +200,39 @@ func TestPRDiff_PrintsChangedFiles(t *testing.T) {
 	assert.Contains(t, out, "MODIFY")
 }
 
+// TASK-0419 — 서버가 FileDiffResponse로 pathA/pathB/changeType과 함께 unified diff 텍스트(patch)를
+// 내려주기 시작한 뒤, CLI도 그 patch 내용을 실제로 화면에 보여줘야 한다("diff" 커맨드인데 파일 목록
+// 요약 한 줄만 보여주고 실제 diff 내용을 --json 없이는 볼 수 없던 UX 결함 수정).
+func TestPRDiff_PrintsPatchContent(t *testing.T) {
+	isolateConfigDir(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[{"pathA":"a.txt","pathB":"a.txt","changeType":"MODIFY","patch":"@@ -1,1 +1,1 @@\n-old\n+new\n"}]`))
+	}))
+	defer server.Close()
+
+	out, err := runCLI(t, "", "pr", "diff", "1", "--server", server.URL, "--token", "t", "--repo", "acme/widgets")
+
+	require.NoError(t, err)
+	assert.Contains(t, out, "@@ -1,1 +1,1 @@")
+	assert.Contains(t, out, "-old")
+	assert.Contains(t, out, "+new")
+}
+
+// patch 필드가 없는(예: 서버 구버전) 경우 str()이 반환하는 "-" 자리표시자를 실제 diff 내용처럼
+// 출력하면 안 된다.
+func TestPRDiff_OmitsPlaceholderWhenPatchMissing(t *testing.T) {
+	isolateConfigDir(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[{"pathA":"a.txt","pathB":"a.txt","changeType":"MODIFY"}]`))
+	}))
+	defer server.Close()
+
+	out, err := runCLI(t, "", "pr", "diff", "1", "--server", server.URL, "--token", "t", "--repo", "acme/widgets")
+
+	require.NoError(t, err)
+	assert.NotContains(t, out, "MODIFY\ta.txt -> a.txt\n-\n")
+}
+
 func TestPRComment_PostsComment(t *testing.T) {
 	isolateConfigDir(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

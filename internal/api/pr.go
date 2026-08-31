@@ -127,15 +127,15 @@ func (c *Client) ReopenPullRequest(ctx context.Context, owner, project string, n
 	return out, nil
 }
 
-// GetPullRequestDiff는 GET .../pull-requests/{number}/diff를 호출한다. 서버 응답(List<FileDiff>)은
-// JGit 내부 타입(RawText/EditList 등)을 그대로 노출하는 엔티티라 정확한 필드 구성을 신뢰할 수 없어
-// (아래 참고) map으로 느슨하게 받는다.
+// GetPullRequestDiff는 GET .../pull-requests/{number}/diff를 호출한다.
 //
-// 알려진 리스크(서버 쪽 문제, 이번 CLI 작업 범위 밖 — yona-wiki 계획 문서에 보고): FileDiff.a/b는
-// org.eclipse.jgit.diff.RawText, editList는 EditList(Edit 리스트)로 선언돼 있는데, 둘 다 일반
-// Jackson 빈 컨벤션에 맞는 getter가 없는 JGit 내부 클래스다. 이 상태로 그대로 직렬화하면 필드가
-// 거의 비거나(getter 없음) Jackson이 예외를 던질 가능성이 있다 — 즉 pathA/pathB/changeType 같은
-// 단순 필드 위주로만 신뢰하고, a/b/editList/hunks 값은 방어적으로 다뤄야 한다.
+// yona-wiki P3-02 10라운드(TASK-0419) — 서버가 원래 FileDiff 엔티티(JGit 내부 타입 RawText/
+// EditList/FileMode를 그대로 들고 있는 값 객체)를 가공 없이 그대로 반환해, pathA/pathB조차
+// 신뢰할 수 없었다(실측: `pr diff`가 "- -> -"로 깨져 나옴). 서버가 이제 pathA/pathB/changeType 등
+// 단순 필드와 서버가 직접 조립한 unified diff 텍스트(patch)만 담은 응답 DTO로 변환해 내려주므로
+// (PullRequestController.getDiff() -> FileDiffResponse), map으로 느슨하게 받는 것 자체는 유지하되
+// (다른 필드가 CLI 버전 변경 없이 늘어나도 깨지지 않도록) 이제 pathA/pathB/changeType/patch 전부
+// 안정적으로 신뢰할 수 있다.
 func (c *Client) GetPullRequestDiff(ctx context.Context, owner, project string, number int64) ([]map[string]interface{}, error) {
 	var out []map[string]interface{}
 	path := fmt.Sprintf("%s/%d/diff", pullRequestsBasePath(owner, project), number)
