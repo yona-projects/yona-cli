@@ -41,22 +41,33 @@ func TestPRView_PrintsDetail(t *testing.T) {
 	assert.Contains(t, out, "feature -> main")
 }
 
-func TestPRCreate_SendsRequiredFields(t *testing.T) {
+func TestPRCreate_ResolvesFromRepoToProjectID(t *testing.T) {
 	isolateConfigDir(t)
+	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"number":10,"title":"새 PR"}`))
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/projects/forker/widgets":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":2,"owner":"forker","name":"widgets"}`))
+		case r.Method == http.MethodPost:
+			_ = json.NewDecoder(r.Body).Decode(&gotBody)
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"number":10,"title":"새 PR"}`))
+		default:
+			t.Fatalf("예상치 못한 요청: %s %s", r.Method, r.URL.Path)
+		}
 	}))
 	defer server.Close()
 
 	out, err := runCLI(t, "", "pr", "create", "--server", server.URL, "--token", "t", "--repo", "acme/widgets",
-		"--title", "새 PR", "--from-project-id", "2", "--from-branch", "feature", "--to-branch", "main")
+		"--title", "새 PR", "--from", "forker/widgets", "--from-branch", "feature", "--to-branch", "main")
 
 	require.NoError(t, err)
 	assert.Contains(t, out, "#10")
+	assert.EqualValues(t, 2, gotBody["fromProjectId"])
 }
 
-func TestPRCreate_RequiresFromProjectID(t *testing.T) {
+func TestPRCreate_RequiresFrom(t *testing.T) {
 	isolateConfigDir(t)
 
 	_, err := runCLI(t, "", "pr", "create", "--server", "http://unused.invalid", "--token", "t", "--repo", "acme/widgets",

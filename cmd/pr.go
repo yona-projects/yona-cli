@@ -131,9 +131,13 @@ func newPRViewCmd(ctx *cmdContext) *cobra.Command {
 	return cmd
 }
 
+// newPRCreateCmd — gh pr create는 로컬 git 체크아웃의 브랜치만으로 동작하지만, yona는
+// fork(from) 프로젝트를 명시해야 한다. 예전엔 숫자 프로젝트 ID(--from-project-id)를
+// 'project view'로 미리 조회해서 넘겨야 했는데(P3-02 감사표 항목, TASK-0396), 그 수동
+// 조회 단계를 없애고 "owner/project" 형식의 --from을 받아 CLI가 내부에서 기존 프로젝트
+// 조회 API(GET /api/v1/projects/{owner}/{project})로 ID를 알아서 resolve한다.
 func newPRCreateCmd(ctx *cmdContext) *cobra.Command {
-	var repo, title, body, fromBranch, toBranch string
-	var fromProjectID int64
+	var repo, title, body, from, fromBranch, toBranch string
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "새 풀 리퀘스트를 만든다",
@@ -142,15 +146,23 @@ func newPRCreateCmd(ctx *cmdContext) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if title == "" || fromBranch == "" || toBranch == "" || fromProjectID == 0 {
-				return fmt.Errorf("--title, --from-project-id, --from-branch, --to-branch는 모두 필수입니다")
+			if title == "" || from == "" || fromBranch == "" || toBranch == "" {
+				return fmt.Errorf("--title, --from, --from-branch, --to-branch는 모두 필수입니다")
+			}
+			fromOwner, fromProject, err := parseRepo(from)
+			if err != nil {
+				return fmt.Errorf("--from 형식이 올바르지 않습니다: %w", err)
 			}
 			client, err := ctx.newClient()
 			if err != nil {
 				return err
 			}
+			fromProj, err := client.GetProject(cmd.Context(), fromOwner, fromProject)
+			if err != nil {
+				return fmt.Errorf("--from 프로젝트(%s)를 조회할 수 없습니다: %w", from, err)
+			}
 			pr, err := client.CreatePullRequest(cmd.Context(), owner, project, api.CreatePullRequestRequest{
-				Title: title, Body: body, FromProjectID: fromProjectID, FromBranch: fromBranch, ToBranch: toBranch,
+				Title: title, Body: body, FromProjectID: fromProj.ID, FromBranch: fromBranch, ToBranch: toBranch,
 			})
 			if err != nil {
 				return err
@@ -162,11 +174,11 @@ func newPRCreateCmd(ctx *cmdContext) *cobra.Command {
 	cmd.Flags().StringVarP(&repo, "repo", "R", "", `대상(to) 프로젝트, "owner/project" 형식 (생략 시 현재 디렉터리의 git origin remote로 자동감지)`)
 	cmd.Flags().StringVar(&title, "title", "", "제목 (필수)")
 	cmd.Flags().StringVar(&body, "body", "", "본문")
-	cmd.Flags().Int64Var(&fromProjectID, "from-project-id", 0, "fork(from) 프로젝트의 숫자 ID (필수, 'yona project view'로 id 확인)")
+	cmd.Flags().StringVar(&from, "from", "", `fork(from) 프로젝트, "owner/project" 형식 (필수)`)
 	cmd.Flags().StringVar(&fromBranch, "from-branch", "", "fork(from) 브랜치 (필수)")
 	cmd.Flags().StringVar(&toBranch, "to-branch", "", "대상(to) 브랜치 (필수)")
 	_ = cmd.MarkFlagRequired("title")
-	_ = cmd.MarkFlagRequired("from-project-id")
+	_ = cmd.MarkFlagRequired("from")
 	_ = cmd.MarkFlagRequired("from-branch")
 	_ = cmd.MarkFlagRequired("to-branch")
 	return cmd

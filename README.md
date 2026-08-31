@@ -122,7 +122,7 @@ yona issue list --repo acme/widgets --token <제한된 토큰>
 |---|---|
 | `yona pr list [-R <owner/project>] [--state] [--author] [-L N] [--json fields] [--web]` | 목록 |
 | `yona pr view <number> [-R ...] [--json fields] [--web]` | 조회 |
-| `yona pr create -R <owner/project> --title <제목> --from-project-id <ID> --from-branch <브랜치> --to-branch <브랜치>` | 생성 |
+| `yona pr create -R <owner/project> --title <제목> --from <owner/project> --from-branch <브랜치> --to-branch <브랜치>` | 생성 (`--from`은 fork 프로젝트를 "owner/project" 형식으로 지정 — 숫자 ID를 미리 조회할 필요 없음) |
 | `yona pr edit <number> [-R ...] [--title] [--body]` | 제목/본문 수정 (생략한 필드는 기존 값 유지) |
 | `yona pr merge <number> [-R ...]` | 머지 |
 | `yona pr close <number> [-R ...]` | 닫기 |
