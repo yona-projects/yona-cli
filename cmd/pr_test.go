@@ -241,7 +241,7 @@ func TestPlanCheckout_ComputesRemoteURLBranchAndLocalBranch(t *testing.T) {
 	remoteURL, branch, localBranch, err := planCheckout(pr, "http://yona.example.com/", 7)
 
 	require.NoError(t, err)
-	assert.Equal(t, "http://yona.example.com/bob/widgets.git", remoteURL)
+	assert.Equal(t, "http://yona.example.com/git/bob/widgets.git", remoteURL)
 	assert.Equal(t, "feature", branch)
 	assert.Equal(t, "pr-7", localBranch)
 }

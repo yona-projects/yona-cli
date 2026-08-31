@@ -461,7 +461,11 @@ func planCheckout(pr map[string]interface{}, baseURL string, number int64) (remo
 	if fromOwner == "" || fromName == "" || fromBranch == "" {
 		return "", "", "", fmt.Errorf("서버 응답에서 fromProject/fromBranch를 확인할 수 없습니다")
 	}
-	remoteURL = strings.TrimRight(baseURL, "/") + "/" + fromOwner + "/" + fromName + ".git"
+	// TASK-0416(yona-wiki P3-02 10라운드) — 실제 git 스마트 HTTP 서블릿은 서버의 "/git/*" 경로에
+	// 등록돼 있다(yuna GitServletConfig.kt). "/git/" 세그먼트 없이 URL을 만들면 실제 git fetch가
+	// 항상 404로 실패한다(실서버 재현으로 발견 — 서버 쪽 TemplateHelper.getCloneUrl()도 동일한
+	// 착오가 있어 함께 수정했다).
+	remoteURL = strings.TrimRight(baseURL, "/") + "/git/" + fromOwner + "/" + fromName + ".git"
 	localBranch = fmt.Sprintf("pr-%d", number)
 	return remoteURL, fromBranch, localBranch, nil
 }
