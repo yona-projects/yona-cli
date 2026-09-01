@@ -59,3 +59,22 @@ func (c *Client) DeleteLabel(ctx context.Context, owner, project string, id int6
 	path := fmt.Sprintf("%s/%d", labelsBasePath(owner, project), id)
 	return c.DoJSON(ctx, http.MethodDelete, path, nil, nil)
 }
+
+// ResolveLabelID는 라벨 이름으로 프로젝트에 이미 존재하는 라벨의 id를 찾는다. issue/PR
+// create·edit REST API는 라벨을 숫자 labelId로만 받으므로(라벨 이름을 직접 받지 않음) CLI가
+// 사람이 입력하는 라벨 이름을 이 값으로 변환해야 한다(yona-wiki P3-02 13라운드/TASK-0430 —
+// `issue create/edit --label`, `pr edit --add-label/--remove-label`).
+func (c *Client) ResolveLabelID(ctx context.Context, owner, project, name string) (int64, error) {
+	labels, err := c.ListLabels(ctx, owner, project)
+	if err != nil {
+		return 0, err
+	}
+	for _, l := range labels {
+		if n, ok := l["name"].(string); ok && n == name {
+			if id, ok := l["id"].(float64); ok {
+				return int64(id), nil
+			}
+		}
+	}
+	return 0, fmt.Errorf("라벨 %q를 찾을 수 없습니다(프로젝트에 먼저 `yona label create`로 만들어야 합니다)", name)
+}

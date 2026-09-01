@@ -146,3 +146,56 @@ func num(m map[string]interface{}, key string) string {
 	}
 	return "-"
 }
+
+// rawInt64는 map[string]interface{}에서 숫자 필드를 int64로 꺼낸다(ok=false면 없거나 null).
+// yona-wiki P3-02 13라운드(TASK-0430) — `issue edit`/`pr edit`가 read-modify-write로 현재
+// milestoneId/assignee.userId/labels[].id를 재전송해 보존해야 할 때 쓴다.
+func rawInt64(m map[string]interface{}, key string) (int64, bool) {
+	if v, ok := m[key]; ok && v != nil {
+		if f, ok := v.(float64); ok {
+			return int64(f), true
+		}
+	}
+	return 0, false
+}
+
+// rawMap은 map[string]interface{}에서 중첩된 객체 필드를 꺼낸다(예: issue["assignee"]).
+func rawMap(m map[string]interface{}, key string) (map[string]interface{}, bool) {
+	if v, ok := m[key]; ok && v != nil {
+		if mm, ok := v.(map[string]interface{}); ok {
+			return mm, true
+		}
+	}
+	return nil, false
+}
+
+// rawSlice는 map[string]interface{}에서 중첩된 배열 필드를 꺼낸다(예: issue["labels"]).
+func rawSlice(m map[string]interface{}, key string) []interface{} {
+	if v, ok := m[key]; ok && v != nil {
+		if s, ok := v.([]interface{}); ok {
+			return s
+		}
+	}
+	return nil
+}
+
+// currentLabelIDs는 issue/PR 응답의 labels 배열(각 원소가 {"id": ..., ...})에서 id만 뽑는다.
+func currentLabelIDs(m map[string]interface{}) []int64 {
+	var ids []int64
+	for _, item := range rawSlice(m, "labels") {
+		if lm, ok := item.(map[string]interface{}); ok {
+			if id, ok := rawInt64(lm, "id"); ok {
+				ids = append(ids, id)
+			}
+		}
+	}
+	return ids
+}
+
+// currentAssigneeUserID는 issue/PR 응답의 assignee 객체({"userId": ...})에서 userId를 뽑는다.
+func currentAssigneeUserID(m map[string]interface{}) (int64, bool) {
+	if am, ok := rawMap(m, "assignee"); ok {
+		return rawInt64(am, "userId")
+	}
+	return 0, false
+}

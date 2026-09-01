@@ -126,8 +126,33 @@ func newIssueViewCmd(ctx *cmdContext) *cobra.Command {
 	return cmd
 }
 
+// resolveIssueAssigneeLabelFlags는 issue/PR create/edit 명령이 공통으로 쓰는 "--assignee
+// <loginId>"/"--label <name>(반복 가능)" 플래그를 서버가 요구하는 숫자 assigneeId/labelIds로
+// 변환한다(yona-wiki P3-02 13라운드/TASK-0430 — 서버 REST API엔 필드가 이미 있었지만 CLI에 배선이
+// 아예 없던 갭 해소).
+func resolveAssigneeFlag(cmd *cobra.Command, client *api.Client, owner, project, loginID string) (*int64, error) {
+	id, err := client.ResolveAssigneeID(cmd.Context(), owner, project, loginID)
+	if err != nil {
+		return nil, err
+	}
+	return &id, nil
+}
+
+func resolveLabelFlags(cmd *cobra.Command, client *api.Client, owner, project string, names []string) ([]int64, error) {
+	ids := make([]int64, 0, len(names))
+	for _, name := range names {
+		id, err := client.ResolveLabelID(cmd.Context(), owner, project, name)
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
 func newIssueCreateCmd(ctx *cmdContext) *cobra.Command {
-	var repo, title, body string
+	var repo, title, body, assignee string
+	var labels []string
 	var draft bool
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -144,9 +169,22 @@ func newIssueCreateCmd(ctx *cmdContext) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			issue, err := client.CreateIssue(cmd.Context(), owner, project, api.CreateIssueRequest{
-				Title: title, Body: body, IsDraft: draft,
-			})
+			req := api.CreateIssueRequest{Title: title, Body: body, IsDraft: draft}
+			if assignee != "" {
+				id, err := resolveAssigneeFlag(cmd, client, owner, project, assignee)
+				if err != nil {
+					return err
+				}
+				req.AssigneeID = id
+			}
+			if len(labels) > 0 {
+				ids, err := resolveLabelFlags(cmd, client, owner, project, labels)
+				if err != nil {
+					return err
+				}
+				req.LabelIDs = ids
+			}
+			issue, err := client.CreateIssue(cmd.Context(), owner, project, req)
 			if err != nil {
 				return err
 			}
@@ -157,6 +195,8 @@ func newIssueCreateCmd(ctx *cmdContext) *cobra.Command {
 	cmd.Flags().StringVarP(&repo, "repo", "R", "", `대상 프로젝트, "owner/project" 형식 (생략 시 현재 디렉터리의 git origin remote로 자동감지)`)
 	cmd.Flags().StringVar(&title, "title", "", "이슈 제목 (필수)")
 	cmd.Flags().StringVar(&body, "body", "", "이슈 본문")
+	cmd.Flags().StringVar(&assignee, "assignee", "", "담당자 로그인ID")
+	cmd.Flags().StringArrayVar(&labels, "label", nil, "라벨 이름 (반복 지정 가능)")
 	cmd.Flags().BoolVar(&draft, "draft", false, "초안(DRAFT)으로 생성")
 	_ = cmd.MarkFlagRequired("title")
 	return cmd
@@ -166,11 +206,21 @@ func newIssueCreateCmd(ctx *cmdContext) *cobra.Command {
 // (IssueRestApiController.update()) CLI 쪽 명령이 없었다. --title/--body를 생략하면
 // read-modify-write로 현재 값을 그대로 유지한다(UpdateIssueRequest의 title/body가 서버에서
 // non-null 필수값이라 부분 수정이라도 전체를 채워 보내야 한다).
+//
+// yona-wiki P3-02 13라운드(TASK-0430) — IssueServiceImpl.updateIssue()는 title/body와 달리
+// assignee/milestone/labels를 "요청에 값이 없으면 기존 값 유지"가 아니라 "요청에 값이 없으면
+// null/빈 값으로 덮어쓴다"(전체 교체 시맨틱, 웹 폼이 항상 현재 값을 hidden input으로 재제출하는
+// 것을 전제로 설계됨). CLI가 이 필드들을 아예 보내지 않고 있어 지금까지 `yona issue edit`을
+// 한 번이라도 호출하면 그 이슈의 담당자/마일스톤/라벨이 전부 조용히 지워지는 데이터 손실
+// 버그였다 — --assignee/--label을 새로 추가하면서 title/body와 동일한 read-modify-write
+// 패턴으로 세 필드 모두 보존하도록 함께 고쳤다.
 func newIssueEditCmd(ctx *cmdContext) *cobra.Command {
-	var repo, title, body string
+	var repo, title, body, assignee string
+	var removeAssignee bool
+	var labels []string
 	cmd := &cobra.Command{
 		Use:   "edit <number>",
-		Short: "이슈 제목/본문을 수정한다",
+		Short: "이슈 제목/본문/담당자/라벨을 수정한다",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			owner, project, err := resolveRepo(cmd, repo)
@@ -181,8 +231,8 @@ func newIssueEditCmd(ctx *cmdContext) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if title == "" && body == "" {
-				return fmt.Errorf("--title 또는 --body 중 하나는 지정해야 합니다")
+			if title == "" && body == "" && assignee == "" && !removeAssignee && len(labels) == 0 {
+				return fmt.Errorf("--title, --body, --assignee, --remove-assignee, --label 중 하나는 지정해야 합니다")
 			}
 			client, err := ctx.newClient()
 			if err != nil {
@@ -199,7 +249,43 @@ func newIssueEditCmd(ctx *cmdContext) *cobra.Command {
 			if newBody == "" {
 				newBody = rawStr(current, "body")
 			}
-			issue, err := client.UpdateIssue(cmd.Context(), owner, project, number, api.UpdateIssueRequest{Title: newTitle, Body: newBody})
+			req := api.UpdateIssueRequest{Title: newTitle, Body: newBody}
+
+			// milestoneId: 이 명령엔 아직 마일스톤 변경 플래그가 없으므로 항상 현재 값을 보존한다.
+			if milestoneID, ok := rawInt64(current, "milestoneId"); ok {
+				req.MilestoneID = &milestoneID
+			}
+
+			// assigneeId: --remove-assignee면 명시적으로 비움(nil), --assignee면 새로 지정,
+			// 둘 다 없으면 현재 담당자를 그대로 보존한다.
+			switch {
+			case removeAssignee:
+				// req.AssigneeID는 nil 그대로 둔다 (담당자 해제).
+			case assignee != "":
+				id, err := resolveAssigneeFlag(cmd, client, owner, project, assignee)
+				if err != nil {
+					return err
+				}
+				req.AssigneeID = id
+			default:
+				if id, ok := currentAssigneeUserID(current); ok {
+					req.AssigneeID = &id
+				}
+			}
+
+			// labelIds: --label을 하나라도 지정하면 그 집합으로 완전히 교체하고(서버가 부분
+			// 추가/제거가 아닌 전체 교체만 지원), 지정하지 않으면 현재 라벨 집합을 그대로 보존한다.
+			if len(labels) > 0 {
+				ids, err := resolveLabelFlags(cmd, client, owner, project, labels)
+				if err != nil {
+					return err
+				}
+				req.LabelIDs = ids
+			} else {
+				req.LabelIDs = currentLabelIDs(current)
+			}
+
+			issue, err := client.UpdateIssue(cmd.Context(), owner, project, number, req)
 			if err != nil {
 				return err
 			}
@@ -210,6 +296,9 @@ func newIssueEditCmd(ctx *cmdContext) *cobra.Command {
 	cmd.Flags().StringVarP(&repo, "repo", "R", "", `대상 프로젝트, "owner/project" 형식 (생략 시 현재 디렉터리의 git origin remote로 자동감지)`)
 	cmd.Flags().StringVar(&title, "title", "", "새 제목")
 	cmd.Flags().StringVar(&body, "body", "", "새 본문")
+	cmd.Flags().StringVar(&assignee, "assignee", "", "담당자로 지정할 로그인ID")
+	cmd.Flags().BoolVar(&removeAssignee, "remove-assignee", false, "담당자 지정을 해제한다")
+	cmd.Flags().StringArrayVar(&labels, "label", nil, "라벨 이름 (반복 지정 가능 — 지정하면 기존 라벨 전체를 이 집합으로 교체)")
 	return cmd
 }
 
