@@ -32,22 +32,26 @@ type PullRequestCommentRequest struct {
 	Body string `json:"body"`
 }
 
-// PullRequestListOptions는 GET .../pull-requests의 선택 쿼리 파라미터를 담는다. yona PullRequest
-// 엔티티엔 이슈와 달리 labels/assignee 개념이 없어(reviewers/contributor만 존재) --author만
-// 지원한다(서버 web/PullRequestController.kt의 주석 그대로). Limit은 서버가 이 엔드포인트에
-// 페이지네이션을 지원하지 않아(List<PullRequest> 그대로 반환) 클라이언트 사이드 슬라이싱으로
-// 처리한다 — cmd 계층에서 응답을 받은 뒤 자른다.
+// PullRequestListOptions는 GET .../pull-requests의 선택 쿼리 파라미터를 담는다. Limit은 서버가
+// 이 엔드포인트에 페이지네이션을 지원하지 않아(List<PullRequest> 그대로 반환) 클라이언트 사이드
+// 슬라이싱으로 처리한다 — cmd 계층에서 응답을 받은 뒤 자른다.
+//
+// yona-wiki P3-02 7라운드가 PR에 assignee/label 개념을 신설하면서 목록 필터도 함께 추가했지만
+// (PullRequestController.getPullRequests()의 assignee/label 파라미터) CLI 쪽 배선이 없었다 —
+// 13라운드(TASK-0430)가 해소. Assignee는 로그인ID, Label은 라벨 이름 등가비교다(서버 그대로).
 type PullRequestListOptions struct {
-	State  string
-	Author string
+	State    string
+	Author   string
+	Assignee string
+	Label    string
 }
 
 func pullRequestsBasePath(owner, project string) string {
 	return fmt.Sprintf("/api/v1/projects/%s/%s/pull-requests", owner, project)
 }
 
-// ListPullRequests는 GET .../pull-requests[?state=&author=]를 호출한다. 응답은 PullRequest
-// 엔티티를 직접 직렬화한 배열이라(Issue와 동일한 이유로) map으로 느슨하게 받는다.
+// ListPullRequests는 GET .../pull-requests[?state=&author=&assignee=&label=]를 호출한다. 응답은
+// PullRequest 엔티티를 직접 직렬화한 배열이라(Issue와 동일한 이유로) map으로 느슨하게 받는다.
 func (c *Client) ListPullRequests(ctx context.Context, owner, project string, opts PullRequestListOptions) ([]map[string]interface{}, error) {
 	path := pullRequestsBasePath(owner, project)
 	q := url.Values{}
@@ -56,6 +60,12 @@ func (c *Client) ListPullRequests(ctx context.Context, owner, project string, op
 	}
 	if opts.Author != "" {
 		q.Set("author", opts.Author)
+	}
+	if opts.Assignee != "" {
+		q.Set("assignee", opts.Assignee)
+	}
+	if opts.Label != "" {
+		q.Set("label", opts.Label)
 	}
 	if encoded := q.Encode(); encoded != "" {
 		path += "?" + encoded
@@ -172,4 +182,58 @@ func (c *Client) AddReviewer(ctx context.Context, owner, project string, number 
 func (c *Client) RemoveReviewer(ctx context.Context, owner, project string, number int64) error {
 	path := fmt.Sprintf("%s/%d/reviewers", pullRequestsBasePath(owner, project), number)
 	return c.DoJSON(ctx, http.MethodDelete, path, nil, nil)
+}
+
+// setPullRequestAssigneeRequest는 web/PullRequestController.kt의 SetAssigneeRequest와 필드가
+// 동일해야 한다.
+type setPullRequestAssigneeRequest struct {
+	UserID int64 `json:"userId"`
+}
+
+// SetPullRequestAssignee는 PUT .../pull-requests/{number}/assignee를 호출한다(yona-wiki P3-02
+// 7라운드가 서버에 신설했지만 CLI 배선이 없던 갭 — 13라운드/TASK-0430이 해소).
+func (c *Client) SetPullRequestAssignee(ctx context.Context, owner, project string, number, userID int64) (map[string]interface{}, error) {
+	var out map[string]interface{}
+	path := fmt.Sprintf("%s/%d/assignee", pullRequestsBasePath(owner, project), number)
+	if err := c.DoJSON(ctx, http.MethodPut, path, setPullRequestAssigneeRequest{UserID: userID}, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// RemovePullRequestAssignee는 DELETE .../pull-requests/{number}/assignee를 호출한다.
+func (c *Client) RemovePullRequestAssignee(ctx context.Context, owner, project string, number int64) (map[string]interface{}, error) {
+	var out map[string]interface{}
+	path := fmt.Sprintf("%s/%d/assignee", pullRequestsBasePath(owner, project), number)
+	if err := c.DoJSON(ctx, http.MethodDelete, path, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// addPullRequestLabelRequest는 web/PullRequestController.kt의 AddPullRequestLabelRequest와
+// 필드가 동일해야 한다.
+type addPullRequestLabelRequest struct {
+	LabelID int64 `json:"labelId"`
+}
+
+// AddPullRequestLabel은 POST .../pull-requests/{number}/labels를 호출한다(yona-wiki P3-02
+// 7라운드가 서버에 신설했지만 CLI 배선이 없던 갭 — 13라운드/TASK-0430이 해소).
+func (c *Client) AddPullRequestLabel(ctx context.Context, owner, project string, number, labelID int64) (map[string]interface{}, error) {
+	var out map[string]interface{}
+	path := fmt.Sprintf("%s/%d/labels", pullRequestsBasePath(owner, project), number)
+	if err := c.DoJSON(ctx, http.MethodPost, path, addPullRequestLabelRequest{LabelID: labelID}, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// RemovePullRequestLabel은 DELETE .../pull-requests/{number}/labels/{labelId}를 호출한다.
+func (c *Client) RemovePullRequestLabel(ctx context.Context, owner, project string, number, labelID int64) (map[string]interface{}, error) {
+	var out map[string]interface{}
+	path := fmt.Sprintf("%s/%d/labels/%d", pullRequestsBasePath(owner, project), number, labelID)
+	if err := c.DoJSON(ctx, http.MethodDelete, path, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

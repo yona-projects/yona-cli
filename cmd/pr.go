@@ -31,7 +31,7 @@ func newPRCmd(ctx *cmdContext) *cobra.Command {
 }
 
 func newPRListCmd(ctx *cmdContext) *cobra.Command {
-	var repo, state, author, jsonFields string
+	var repo, state, author, assignee, label, jsonFields string
 	var limit int
 	var web bool
 	cmd := &cobra.Command{
@@ -54,7 +54,9 @@ func newPRListCmd(ctx *cmdContext) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			prs, err := client.ListPullRequests(cmd.Context(), owner, project, api.PullRequestListOptions{State: state, Author: author})
+			prs, err := client.ListPullRequests(cmd.Context(), owner, project, api.PullRequestListOptions{
+				State: state, Author: author, Assignee: assignee, Label: label,
+			})
 			if err != nil {
 				return err
 			}
@@ -79,6 +81,8 @@ func newPRListCmd(ctx *cmdContext) *cobra.Command {
 	cmd.Flags().StringVarP(&repo, "repo", "R", "", `대상 프로젝트, "owner/project" 형식 (생략 시 현재 디렉터리의 git origin remote로 자동감지)`)
 	cmd.Flags().StringVar(&state, "state", "", "상태로 필터링 (예: OPEN, CLOSED, MERGED)")
 	cmd.Flags().StringVar(&author, "author", "", "작성자(contributor) 로그인ID로 필터링")
+	cmd.Flags().StringVar(&assignee, "assignee", "", "담당자 로그인ID로 필터링")
+	cmd.Flags().StringVar(&label, "label", "", "라벨 이름으로 필터링")
 	cmd.Flags().IntVarP(&limit, "limit", "L", 0, "가져올 최대 개수 (클라이언트 사이드 슬라이싱, 생략 시 전체)")
 	cmd.Flags().StringVar(&jsonFields, "json", "", "콤마로 구분한 필드만 뽑아 JSON으로 출력 (예: --json number,title,state)")
 	cmd.Flags().BoolVar(&web, "web", false, "API 호출 대신 풀 리퀘스트 목록 웹 페이지를 브라우저로 연다")
@@ -184,14 +188,19 @@ func newPRCreateCmd(ctx *cmdContext) *cobra.Command {
 	return cmd
 }
 
-// newPREditCmd는 "gh pr edit" 대응 — yona-wiki P3-02 4라운드가 PATCH 어댑터를 추가한
-// PullRequestApiController.update()를 그대로 감싼다(서비스 로직 자체는 Step5의 PUT부터 존재).
-// title은 서버에서 non-null 필수값이라 --title을 생략하면 read-modify-write로 현재 값을 유지한다.
+// newPREditCmd는 제목/본문(PATCH, read-modify-write)과 담당자/라벨(전용 PUT/DELETE/POST
+// 엔드포인트, yona-wiki P3-02 7라운드가 서버에 신설)을 함께 다룬다. 이슈와 달리 PR의 담당자/
+// 라벨은 update PATCH 본문에 포함되지 않는 별도 API라(PullRequestApiController의
+// setAssignee/removeAssignee/addLabel/removeLabel) title/body 수정과 무관하게 독립적으로
+// 적용된다 — 이슈 edit의 "지정 안 하면 덮어써서 지워지는" 문제가 PR에는 애초에 없다.
+// 13라운드(TASK-0430)가 CLI 배선을 추가했다(서버 API는 7라운드부터 이미 존재).
 func newPREditCmd(ctx *cmdContext) *cobra.Command {
-	var repo, title, body string
+	var repo, title, body, assignee string
+	var removeAssignee bool
+	var addLabels, removeLabels []string
 	cmd := &cobra.Command{
 		Use:   "edit <number>",
-		Short: "풀 리퀘스트 제목/본문을 수정한다",
+		Short: "풀 리퀘스트 제목/본문/담당자/라벨을 수정한다",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			owner, project, err := resolveRepo(cmd, repo)
@@ -202,35 +211,76 @@ func newPREditCmd(ctx *cmdContext) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if title == "" && body == "" {
-				return fmt.Errorf("--title 또는 --body 중 하나는 지정해야 합니다")
+			if title == "" && body == "" && assignee == "" && !removeAssignee && len(addLabels) == 0 && len(removeLabels) == 0 {
+				return fmt.Errorf("--title, --body, --assignee, --remove-assignee, --add-label, --remove-label 중 하나는 지정해야 합니다")
 			}
 			client, err := ctx.newClient()
 			if err != nil {
 				return err
 			}
-			req := api.UpdatePullRequestRequest{Title: title}
-			if req.Title == "" {
-				current, err := client.GetPullRequest(cmd.Context(), owner, project, number)
+
+			if title != "" || body != "" {
+				req := api.UpdatePullRequestRequest{Title: title}
+				if req.Title == "" {
+					current, err := client.GetPullRequest(cmd.Context(), owner, project, number)
+					if err != nil {
+						return err
+					}
+					req.Title = rawStr(current, "title")
+				}
+				if body != "" {
+					req.Body = &body
+				}
+				if _, err := client.UpdatePullRequest(cmd.Context(), owner, project, number, req); err != nil {
+					return err
+				}
+			}
+
+			switch {
+			case removeAssignee:
+				if _, err := client.RemovePullRequestAssignee(cmd.Context(), owner, project, number); err != nil {
+					return err
+				}
+			case assignee != "":
+				userID, err := resolveAssigneeFlag(cmd, client, owner, project, assignee)
 				if err != nil {
 					return err
 				}
-				req.Title = rawStr(current, "title")
+				if _, err := client.SetPullRequestAssignee(cmd.Context(), owner, project, number, *userID); err != nil {
+					return err
+				}
 			}
-			if body != "" {
-				req.Body = &body
+
+			for _, name := range addLabels {
+				labelID, err := client.ResolveLabelID(cmd.Context(), owner, project, name)
+				if err != nil {
+					return err
+				}
+				if _, err := client.AddPullRequestLabel(cmd.Context(), owner, project, number, labelID); err != nil {
+					return err
+				}
 			}
-			pr, err := client.UpdatePullRequest(cmd.Context(), owner, project, number, req)
-			if err != nil {
-				return err
+			for _, name := range removeLabels {
+				labelID, err := client.ResolveLabelID(cmd.Context(), owner, project, name)
+				if err != nil {
+					return err
+				}
+				if _, err := client.RemovePullRequestLabel(cmd.Context(), owner, project, number, labelID); err != nil {
+					return err
+				}
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "풀 리퀘스트 #%s을(를) 수정했습니다.\n", num(pr, "number"))
+
+			fmt.Fprintf(cmd.OutOrStdout(), "풀 리퀘스트 #%d을(를) 수정했습니다.\n", number)
 			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&repo, "repo", "R", "", `대상 프로젝트, "owner/project" 형식 (생략 시 현재 디렉터리의 git origin remote로 자동감지)`)
 	cmd.Flags().StringVar(&title, "title", "", "새 제목")
 	cmd.Flags().StringVar(&body, "body", "", "새 본문")
+	cmd.Flags().StringVar(&assignee, "assignee", "", "담당자로 지정할 로그인ID")
+	cmd.Flags().BoolVar(&removeAssignee, "remove-assignee", false, "담당자 지정을 해제한다")
+	cmd.Flags().StringArrayVar(&addLabels, "add-label", nil, "추가할 라벨 이름 (반복 지정 가능)")
+	cmd.Flags().StringArrayVar(&removeLabels, "remove-label", nil, "제거할 라벨 이름 (반복 지정 가능)")
 	return cmd
 }
 
