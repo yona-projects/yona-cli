@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -94,10 +93,23 @@ func TestDeleteWebhook_CallsDeletePath(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestListWebhooks_ReturnsNotSupportedError(t *testing.T) {
-	client := NewClient("http://unused.invalid", "t")
-	err := client.ListWebhooks(context.Background(), "acme", "widgets")
-	assert.True(t, errors.Is(err, ErrNotSupportedByServer))
+// TestListWebhooks_CallsListEndpoint — yona-wiki P3-02 13라운드(TASK-0430) 회귀 테스트.
+// 서버가 7라운드부터 GET /api/v1/projects/{owner}/{project}/webhooks를 지원했는데도 CLI가
+// 계속 ErrNotSupportedByServer 스텁을 반환하던 갭을 고쳤다.
+func TestListWebhooks_CallsListEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/projects/acme/widgets/webhooks", r.URL.Path)
+		assert.Equal(t, http.MethodGet, r.Method)
+		_, _ = w.Write([]byte(`[{"id":5,"payloadUrl":"http://example.com","webhookType":"SIMPLE"}]`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "t")
+	webhooks, err := client.ListWebhooks(context.Background(), "acme", "widgets")
+
+	require.NoError(t, err)
+	require.Len(t, webhooks, 1)
+	assert.Equal(t, "http://example.com", webhooks[0]["payloadUrl"])
 }
 
 func TestAddProjectMember_EncodesLoginIDAsQueryParam(t *testing.T) {
@@ -144,8 +156,21 @@ func TestRemoveProjectMember_UsesDeleteMethod(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestListProjectPermissions_ReturnsNotSupportedError(t *testing.T) {
-	client := NewClient("http://unused.invalid", "t")
-	err := client.ListProjectPermissions(context.Background(), 1)
-	assert.True(t, errors.Is(err, ErrNotSupportedByServer))
+// TestListProjectPermissions_CallsListEndpoint — yona-wiki P3-02 13라운드(TASK-0430) 회귀
+// 테스트. 서버가 7라운드부터 GET /api/v1/projects/{owner}/{project}/permissions를 지원했는데도
+// CLI가 계속 ErrNotSupportedByServer 스텁을 반환하던 갭을 고쳤다.
+func TestListProjectPermissions_CallsListEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/projects/acme/widgets/permissions", r.URL.Path)
+		assert.Equal(t, http.MethodGet, r.Method)
+		_, _ = w.Write([]byte(`[{"userId":9,"loginId":"alice","roleName":"manager"}]`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "t")
+	members, err := client.ListProjectPermissions(context.Background(), "acme", "widgets")
+
+	require.NoError(t, err)
+	require.Len(t, members, 1)
+	assert.Equal(t, "alice", members[0]["loginId"])
 }

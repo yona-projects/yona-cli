@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"os"
 
@@ -9,10 +8,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// yona-wiki P3-02 Step9 조사 결과(internal/api/admin.go 상단 주석 참고): 백업은 실제 JSON에
-// 가까운 API가 있어 완전히 연결했지만, 웹훅/권한 관리는 서버에 세션/폼 기반 레거시 컨트롤러만
-// 있고 owner/project 기반 3종(생성/변경/삭제)은 연결 가능해도 "목록 조회"만큼은 구조화된 JSON을
-// 전혀 내려주지 않아(웹훅은 HTML 페이지, 권한은 해당 엔드포인트 자체가 없음) 스텁으로 남긴다.
+// yona-wiki P3-02 13라운드(TASK-0430): 웹훅/권한 "목록 조회"는 Step8.6(7라운드)이 서버에
+// JSON API(GET .../webhooks, GET .../permissions)를 신설했음에도 이 CLI가 계속 스텁으로
+// 남겨뒀던 갭이었다(internal/api/admin.go 상단 주석 참고) — 이번 라운드가 실제로 연결했다.
 func newAdminCmd(ctx *cmdContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "admin",
@@ -93,7 +91,7 @@ func newAdminBackupImportCmd(ctx *cmdContext) *cobra.Command {
 func newAdminWebhookCmd(ctx *cmdContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "webhook",
-		Short: "프로젝트 웹훅 생성/삭제 (목록 조회는 서버 API 부재로 미구현)",
+		Short: "프로젝트 웹훅 생성/삭제/조회",
 	}
 	cmd.AddCommand(newAdminWebhookCreateCmd(ctx))
 	cmd.AddCommand(newAdminWebhookDeleteCmd(ctx))
@@ -167,23 +165,42 @@ func newAdminWebhookDeleteCmd(ctx *cmdContext) *cobra.Command {
 	return cmd
 }
 
-// yona-wiki P3-02 Step9 조사 결과: 웹훅 목록은 web/WebhookController.kt의 GET 엔드포인트가
-// Thymeleaf HTML 뷰(project/setting_webhook)만 반환해 CLI가 구조화된 데이터를 얻을 방법이
-// 없다. 새 JSON API를 yuna 쪽에 추가하는 것은 이 CLI 작업의 범위 밖이라 미구현 스텁으로 둔다.
+// newAdminWebhookListCmd는 GET /api/v1/projects/{owner}/{project}/webhooks를 호출한다.
+// yona-wiki P3-02 Step8.6(7라운드)이 서버에 이 JSON API를 신설했지만("서버에 API가 없어서
+// 미구현"이라던 이전 주석이 낡아 있었다) CLI 배선이 없던 갭을 13라운드(TASK-0430)가 해소했다.
 func newAdminWebhookListCmd(ctx *cmdContext) *cobra.Command {
-	var repo string
+	var repo, jsonFields string
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "미구현: 서버에 웹훅 목록 JSON API가 없다",
+		Short: "프로젝트 웹훅 목록을 조회한다",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if _, _, err := parseRepo(repo); err != nil {
+			owner, project, err := parseRepo(repo)
+			if err != nil {
 				return err
 			}
-			return errors.New(api.ErrNotSupportedByServer.Error() +
-				" (웹훅 목록은 웹 UI에서 확인하세요: /projects/{owner}/{project}/webhooks)")
+			client, err := ctx.newClient()
+			if err != nil {
+				return err
+			}
+			webhooks, err := client.ListWebhooks(cmd.Context(), owner, project)
+			if err != nil {
+				return err
+			}
+			if cmd.Flags().Changed("json") {
+				return printJSON(cmd, webhooks, jsonFields)
+			}
+			if len(webhooks) == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "웹훅이 없습니다.")
+				return nil
+			}
+			for _, wh := range webhooks {
+				fmt.Fprintf(cmd.OutOrStdout(), "#%s\t%s\t%s\n", num(wh, "id"), str(wh, "payloadUrl"), str(wh, "webhookType"))
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&repo, "repo", "R", "", `대상 프로젝트, "owner/project" 형식 (필수)`)
+	cmd.Flags().StringVar(&jsonFields, "json", "", "콤마로 구분한 필드만 뽑아 JSON으로 출력 (예: --json id,payloadUrl)")
 	_ = cmd.MarkFlagRequired("repo")
 	return cmd
 }
@@ -191,7 +208,7 @@ func newAdminWebhookListCmd(ctx *cmdContext) *cobra.Command {
 func newAdminPermissionCmd(ctx *cmdContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "permission",
-		Short: "프로젝트 멤버 권한 추가/변경/삭제 (목록 조회는 서버 API 부재로 미구현)",
+		Short: "프로젝트 멤버 권한 추가/변경/삭제/조회",
 	}
 	cmd.AddCommand(newAdminPermissionAddCmd(ctx))
 	cmd.AddCommand(newAdminPermissionUpdateRoleCmd(ctx))
@@ -299,23 +316,44 @@ func newAdminPermissionRemoveCmd(ctx *cmdContext) *cobra.Command {
 	return cmd
 }
 
-// yona-wiki P3-02 Step9 조사 결과: web/ProjectMemberController.kt에는 "현재 멤버+역할" 목록을
-// 내려주는 엔드포인트가 없다(가장 가까운 assignableUsers는 "할당 가능한 후보" 목록이지 이미
-// 배정된 권한 매트릭스가 아니다). 새 API 추가는 범위 밖이라 미구현 스텁으로 둔다.
+// newAdminPermissionListCmd는 GET /api/v1/projects/{owner}/{project}/permissions를 호출한다.
+// yona-wiki P3-02 Step8.6(7라운드)이 서버에 이 JSON API를 신설했지만("엔드포인트 자체가 없다"던
+// 이전 주석이 낡아 있었다) CLI 배선이 없던 갭을 13라운드(TASK-0430)가 해소했다. 다른
+// admin permission 명령과 달리 owner/project 이름 기반이라 resolveProjectID(숫자 id 변환)를
+// 거치지 않는다.
 func newAdminPermissionListCmd(ctx *cmdContext) *cobra.Command {
-	var repo string
+	var repo, jsonFields string
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "미구현: 서버에 멤버/권한 목록 JSON API가 없다",
+		Short: "프로젝트 멤버/권한 목록을 조회한다",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if _, _, err := parseRepo(repo); err != nil {
+			owner, project, err := parseRepo(repo)
+			if err != nil {
 				return err
 			}
-			return errors.New(api.ErrNotSupportedByServer.Error() +
-				" (프로젝트 설정 화면에서 확인하세요)")
+			client, err := ctx.newClient()
+			if err != nil {
+				return err
+			}
+			members, err := client.ListProjectPermissions(cmd.Context(), owner, project)
+			if err != nil {
+				return err
+			}
+			if cmd.Flags().Changed("json") {
+				return printJSON(cmd, members, jsonFields)
+			}
+			if len(members) == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "멤버가 없습니다.")
+				return nil
+			}
+			for _, m := range members {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", num(m, "userId"), str(m, "loginId"), str(m, "roleName"))
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&repo, "repo", "R", "", `대상 프로젝트, "owner/project" 형식 (필수)`)
+	cmd.Flags().StringVar(&jsonFields, "json", "", "콤마로 구분한 필드만 뽑아 JSON으로 출력 (예: --json loginId,roleName)")
 	_ = cmd.MarkFlagRequired("repo")
 	return cmd
 }

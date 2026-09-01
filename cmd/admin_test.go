@@ -113,13 +113,20 @@ func TestAdminWebhookDelete_CallsDeleteEndpoint(t *testing.T) {
 	assert.Contains(t, out, "삭제했습니다")
 }
 
-func TestAdminWebhookList_ReturnsNotSupportedError(t *testing.T) {
+// TestAdminWebhookList_PrintsWebhooks — yona-wiki P3-02 13라운드(TASK-0430) 회귀 테스트.
+func TestAdminWebhookList_PrintsWebhooks(t *testing.T) {
 	isolateConfigDir(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/projects/acme/widgets/webhooks", r.URL.Path)
+		_, _ = w.Write([]byte(`[{"id":9,"payloadUrl":"http://example.com","webhookType":"SIMPLE"}]`))
+	}))
+	defer server.Close()
 
-	_, err := runCLI(t, "", "admin", "webhook", "list", "--server", "http://unused.invalid", "--token", "t", "--repo", "acme/widgets")
+	out, err := runCLI(t, "", "admin", "webhook", "list", "--server", server.URL, "--token", "t", "--repo", "acme/widgets")
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "JSON API가 아직 없습니다")
+	require.NoError(t, err)
+	assert.Contains(t, out, "#9")
+	assert.Contains(t, out, "http://example.com")
 }
 
 func TestAdminPermissionAdd_ResolvesProjectIDThenAddsMember(t *testing.T) {
@@ -180,11 +187,18 @@ func TestAdminPermissionRemove_ResolvesProjectIDThenRemoves(t *testing.T) {
 	assert.Contains(t, out, "제거했습니다")
 }
 
-func TestAdminPermissionList_ReturnsNotSupportedError(t *testing.T) {
+// TestAdminPermissionList_PrintsMembers — yona-wiki P3-02 13라운드(TASK-0430) 회귀 테스트.
+func TestAdminPermissionList_PrintsMembers(t *testing.T) {
 	isolateConfigDir(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/projects/acme/widgets/permissions", r.URL.Path)
+		_, _ = w.Write([]byte(`[{"userId":9,"loginId":"alice","roleName":"manager"}]`))
+	}))
+	defer server.Close()
 
-	_, err := runCLI(t, "", "admin", "permission", "list", "--server", "http://unused.invalid", "--token", "t", "--repo", "acme/widgets")
+	out, err := runCLI(t, "", "admin", "permission", "list", "--server", server.URL, "--token", "t", "--repo", "acme/widgets")
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "JSON API가 아직 없습니다")
+	require.NoError(t, err)
+	assert.Contains(t, out, "alice")
+	assert.Contains(t, out, "manager")
 }

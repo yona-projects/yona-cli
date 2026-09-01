@@ -1,4 +1,5 @@
-// admin.go는 yona-wiki P3-02 Step9 조사 결과를 그대로 반영한다.
+// admin.go는 yona-wiki P3-02 Step9 조사 결과를 반영해 시작됐지만, 웹훅/권한 "목록 조회"는
+// 13라운드(TASK-0430) 기준으로 더 이상 스텁이 아니다.
 //
 // 조사 결과 요약(yuna 저장소 src/main/kotlin/com/github/search5/yona/web/ 기준):
 //   - 백업: web/SiteApiController.kt의 GET /site/export(전체 DB JSON 백업 다운로드, 사이트
@@ -8,30 +9,24 @@
 //   - 웹훅: web/WebhookController.kt에 CRUD가 존재하지만 세션/폼 기반 레거시 MVC
 //     컨트롤러다(`/projects/{owner}/{projectName}/webhooks`, `/api/v1` 네임스페이스 밖).
 //     생성(POST, form-urlencoded)과 삭제(DELETE, 빈 JSON 202/200)는 구조상 CLI에서도 그대로
-//     호출 가능해 연결했지만, 목록 조회(GET)는 Thymeleaf가 렌더링한 HTML 페이지를 반환할 뿐
-//     구조화된 JSON을 전혀 주지 않아 CLI가 파싱할 수 없다 — 목록 명령은 스텁으로 남긴다.
+//     호출 가능해 연결했다. 목록 조회는 Step8.6(7라운드)이 `web/WebhookRestApiController.kt`
+//     (`GET /api/v1/projects/{owner}/{project}/webhooks`)를 신설했는데, 그 사실을 몰랐던 이
+//     CLI 쪽은 계속 스텁으로 남아 있었다 — 13라운드(TASK-0430)가 뒤늦게 CLI 배선을 연결했다
+//     (같은 부류의 "서버엔 있는데 CLI가 못 따라간" 갭).
 //   - 권한: web/ProjectMemberController.kt에 멤버 추가/역할변경/삭제(`/api/projects/{projectId}
-//     (숫자 ID)/members/...`)가 JSON으로 존재해 연결했다. 다만 "현재 멤버 목록 + 역할"을 그대로
-//     내려주는 엔드포인트는 없다(가장 가까운 대체재인 assignableUsers는 "할당 가능한 사용자"
-//     목록이지 "이미 배정된 권한 매트릭스"가 아니다) — 목록 명령은 스텁으로 남긴다.
-//
-// 두 "스텁" 항목(웹훅 목록/권한 목록)은 서버에 실제로 API가 없어서이지, CLI 구현 누락이
-// 아니다 — yuna 쪽에 새 API를 추가하는 것은 이 CLI 프로젝트의 범위 밖이라 계획 문서에만
-// 기록하고 CLI는 명확한 안내 메시지만 반환한다.
+//     (숫자 ID)/members/...`)가 JSON으로 존재해 연결했다. "현재 멤버 목록 + 역할"도 마찬가지로
+//     Step8.6(7라운드)이 `web/ProjectPermissionRestApiController.kt`
+//     (`GET /api/v1/projects/{owner}/{project}/permissions`)를 신설했지만 CLI가 못 따라갔던
+//     것을 13라운드가 해소했다.
 package api
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 )
-
-// ErrNotSupportedByServer는 서버에 대응하는 JSON API가 없어 CLI가 구조화된 데이터를
-// 돌려줄 수 없는 경우에 반환된다(위 패키지 주석 참고).
-var ErrNotSupportedByServer = errors.New("yuna 서버에 이 조회를 위한 JSON API가 아직 없습니다(HTML 렌더링 전용 레거시 화면만 존재) — yona-wiki P3-02 계획 문서의 Step9 조사 결과 참고")
 
 // ExportBackup은 GET /site/export를 호출해 전체 데이터 백업 JSON 바이트를 그대로 반환한다.
 // 사이트 매니저 권한이 필요하다(서버 쪽 checkAdmin).
@@ -69,9 +64,17 @@ func (c *Client) DeleteWebhook(ctx context.Context, owner, project string, id in
 	return c.DoJSON(ctx, http.MethodDelete, path, nil, nil)
 }
 
-// ListWebhooks는 서버에 JSON 목록 API가 없어 항상 ErrNotSupportedByServer를 반환한다.
-func (c *Client) ListWebhooks(ctx context.Context, owner, project string) error {
-	return ErrNotSupportedByServer
+// ListWebhooks는 GET /api/v1/projects/{owner}/{project}/webhooks를 호출한다(yona-wiki P3-02
+// 13라운드/TASK-0430 — 서버는 7라운드부터 지원했지만 CLI 배선이 없던 갭 해소). 응답은
+// WebhookController.listWebhooksJson()가 웹 화면과 동일한 노출 수준으로 그대로 돌려주는
+// map 목록이라 느슨하게 받는다.
+func (c *Client) ListWebhooks(ctx context.Context, owner, project string) ([]map[string]interface{}, error) {
+	var out []map[string]interface{}
+	path := fmt.Sprintf("/api/v1/projects/%s/%s/webhooks", owner, project)
+	if err := c.DoJSON(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // AddProjectMember는 POST /api/projects/{projectId}/members?loginId=...를 호출한다
@@ -106,8 +109,15 @@ func (c *Client) RemoveProjectMember(ctx context.Context, projectID, userID int6
 	return out, nil
 }
 
-// ListProjectPermissions는 서버에 "현재 멤버+역할 목록"을 내려주는 JSON API가 없어 항상
-// ErrNotSupportedByServer를 반환한다.
-func (c *Client) ListProjectPermissions(ctx context.Context, projectID int64) error {
-	return ErrNotSupportedByServer
+// ListProjectPermissions는 GET /api/v1/projects/{owner}/{project}/permissions를 호출한다
+// (yona-wiki P3-02 13라운드/TASK-0430 — 서버는 7라운드부터 지원했지만 CLI 배선이 없던 갭
+// 해소). owner/project 이름 기반이라 다른 admin permission 명령(숫자 projectId 기반)과 달리
+// resolveProjectID를 거치지 않는다.
+func (c *Client) ListProjectPermissions(ctx context.Context, owner, project string) ([]map[string]interface{}, error) {
+	var out []map[string]interface{}
+	path := fmt.Sprintf("/api/v1/projects/%s/%s/permissions", owner, project)
+	if err := c.DoJSON(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
