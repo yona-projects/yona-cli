@@ -55,6 +55,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newBrowseCmd(ctx))
 	root.AddCommand(newAdminCmd(ctx))
 	root.AddCommand(newAPICmd(ctx))
+	root.AddCommand(newStatusCmd(ctx))
 
 	// "completion" 서브커맨드는 Cobra가 서브커맨드를 가진 루트 커맨드에 자동으로 등록한다
 	// (ExecuteC() -> InitDefaultCompletionCmd(), CompletionOptions.DisableDefaultCmd 기본값
