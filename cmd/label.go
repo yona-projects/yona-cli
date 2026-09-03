@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/search5/yona-cli/internal/api"
+	"github.com/yona-projects/yona-cli/internal/api"
 	"github.com/spf13/cobra"
 )
 

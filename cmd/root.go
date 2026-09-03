@@ -2,13 +2,13 @@
 package cmd
 
 import (
-	"github.com/search5/yona-cli/internal/api"
-	"github.com/search5/yona-cli/internal/config"
+	"github.com/yona-projects/yona-cli/internal/api"
+	"github.com/yona-projects/yona-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
 // Version은 "yona --version"이 출력하는 값이다. 릴리즈 빌드에서는 goreleaser 등이
-// `-ldflags "-X github.com/search5/yona-cli/cmd.Version=..."`로 주입할 수 있도록 변수로
+// `-ldflags "-X github.com/yona-projects/yona-cli/cmd.Version=..."`로 주입할 수 있도록 변수로
 // 남겨둔다(Step 11 배포 작업 범위, 이번 라운드는 하드코딩 기본값만 둔다).
 var Version = "0.1.0-dev"
 

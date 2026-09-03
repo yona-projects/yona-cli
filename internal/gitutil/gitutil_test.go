@@ -26,10 +26,10 @@ func TestParseOwnerProject_HTTPCloneURLWithoutUserOrGitSuffix(t *testing.T) {
 }
 
 func TestParseOwnerProject_ScpStyleSSHURL(t *testing.T) {
-	owner, project, err := ParseOwnerProject("git@github.com:search5/yona-cli.git")
+	owner, project, err := ParseOwnerProject("git@github.com:yona-projects/yona-cli.git")
 
 	require.NoError(t, err)
-	assert.Equal(t, "search5", owner)
+	assert.Equal(t, "yona-projects", owner)
 	assert.Equal(t, "yona-cli", project)
 }
 

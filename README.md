@@ -1,8 +1,8 @@
 # yona-cli
 
-`yona`는 [yuna](https://github.com/search5/yuna) 서버(REST API)를 감싸는 커맨드라인 도구다.
+`yona-cli`는 [yona](https://github.com/yona-projects/yona) 서버(REST API)를 감싸는 커맨드라인 도구다.
 GitHub CLI(`gh`)와 동일한 컨셉/스택(Go + Cobra)으로 만들었다 — 설치 직후 바로 실행돼야 하므로
-JVM 콜드스타트가 있는 Kotlin은 제외하고 Go를 채택했다(자세한 배경은 yuna 저장소의
+JVM 콜드스타트가 있는 Kotlin은 제외하고 Go를 채택했다(자세한 배경은 yona 저장소의
 `docs/yona-wiki/plans/p3-02-cli-and-rest-api.md` 참고).
 
 ## 설치
@@ -38,7 +38,7 @@ yona auth logout
 ### 인증 토큰의 기본 스코프
 
 `yona auth login`은 **본인 계정이 가진 전체 권한**(전체 저장소 + 모든 스코프 그룹 write)을
-전제로 한다 — 웹 세션 로그인과 동등한 권한이라는 뜻이다. yuna 서버 쪽에 OAuth 유사 로그인
+전제로 한다 — 웹 세션 로그인과 동등한 권한이라는 뜻이다. yona 서버 쪽에 OAuth 유사 로그인
 플로우가 없으므로, 실제로는 다음 둘 중 하나를 웹 UI에서 미리 발급받아 이 명령에 입력한다.
 
 - 레거시 전권 토큰(`/user/editform/token_reset`)
@@ -63,7 +63,7 @@ yona issue list --repo acme/widgets --token <제한된 토큰>
 `gh` CLI와 동일한 관례를 따른다.
 
 - **`--repo`/`-R`**: 생략하면 현재 디렉터리에서 `git remote get-url origin`을 실행해 owner/project를
-  자동감지한다(yuna clone URL 형식은 `TemplateHelper.getCloneUrl()` 참고 — 호스트 뒤 마지막 두
+  자동감지한다(yona clone URL 형식은 `TemplateHelper.getCloneUrl()` 참고 — 호스트 뒤 마지막 두
   경로 세그먼트를 owner/project로 취급). git이 없거나 저장소 밖이면 명시적 `--repo` 오류로 폴백한다.
 - **`--json <fields>`**: 콤마로 구분한 필드만 뽑아 JSON으로 출력한다(예: `--json number,title,state`).
   값 없이 `--json`만 쓰면 오류다(필드 목록이 필수). 예전의 불리언 스위치(`--json` 있음/없음으로 전체
@@ -86,7 +86,7 @@ yona issue list --repo acme/widgets --token <제한된 토큰>
 
 ### `yona server` — 여러 서버 전환
 
-`gh auth switch`에 대응하되, yuna는 자체호스팅이라 회사/개인마다 완전히 다른 인스턴스를 오갈 일이
+`gh auth switch`에 대응하되, yona는 자체호스팅이라 회사/개인마다 완전히 다른 인스턴스를 오갈 일이
 많아 별도 최상위 커맨드로 뒀다. `use`는 이미 로그인된 서버로 전환할 뿐 재로그인을 요구하지 않는다.
 
 | 명령 | 설명 |
@@ -174,7 +174,7 @@ yona issue list --repo acme/widgets --token <제한된 토큰>
 yona-wiki 계획 문서 Step9 조사 결과: 백업은 서버에 JSON에 가까운 API가 있어 완전히
 연결했지만, 웹훅/권한 관리는 서버에 세션·폼 기반 레거시 컨트롤러만 있어 일부만 연결
 가능했다. **목록 조회 두 개는 서버에 대응하는 JSON API가 없어 의도적으로 미구현
-스텁**이다(자세한 내용은 `internal/api/admin.go` 상단 주석과 yuna 저장소 계획 문서 참고).
+스텁**이다(자세한 내용은 `internal/api/admin.go` 상단 주석과 yona 저장소 계획 문서 참고).
 
 | 명령 | 설명 | 상태 |
 |---|---|---|
@@ -212,7 +212,7 @@ echo '{"title":"raw body"}' | yona api -X POST --input - /api/v1/projects/acme/w
 .
 ├── main.go                  # 진입점
 ├── cmd/                      # Cobra 명령 트리 (auth/server/browse/issue/pr/project/label/search/org/admin/api)
-├── internal/api/             # yuna REST API HTTP 클라이언트
+├── internal/api/             # yona REST API HTTP 클라이언트
 ├── internal/gitutil/         # 로컬 git 연동 (--repo 자동감지, pr checkout, --web 브라우저 열기)
 ├── internal/weburl/          # 웹 UI 페이지 URL 계산 (--web/browse 공용)
 └── internal/config/          # ~/.config/yona-cli/config.yml 로드/저장
@@ -224,7 +224,7 @@ echo '{"title":"raw body"}' | yona api -X POST --input - /api/v1/projects/acme/w
 go test ./...
 ```
 
-실제 yuna 서버 없이 `net/http/httptest`로 서버 응답을 목킹해 전부 검증한다(TDD).
+실제 yona 서버 없이 `net/http/httptest`로 서버 응답을 목킹해 전부 검증한다(TDD).
 
 ## 알려진 한계 / 다음 단계
 
@@ -237,7 +237,7 @@ go test ./...
   `pathA`/`pathB`/`changeType`만 안전하게 쓰고 나머지는 `--json`으로만 노출한다(서버 쪽 개선은
   이 CLI 작업 범위 밖).
 - `yona search prs`, `yona issue status`의 mentioned/favorite/shared 필터·페이지네이션 확장은
-  서버(yuna) 쪽 기능 자체가 아직 없어 이월됐다(yona-wiki 계획 문서 참고).
+  서버(yona) 쪽 기능 자체가 아직 없어 이월됐다(yona-wiki 계획 문서 참고).
 - `search`/`organizations`/`user` 전역 엔드포인트와 `project create`는 저장소 단위 스코프
   모델과 맞지 않아 Fine-grained 스코프 토큰으로는 인증되지 않는다(세션 로그인/레거시 전권
   토큰만 가능 — yona-wiki 계획 문서의 스코프 인가 갭 기록 참고).

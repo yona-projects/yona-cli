@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/search5/yona-cli/internal/api"
+	"github.com/yona-projects/yona-cli/internal/api"
 	"github.com/spf13/cobra"
 )
 

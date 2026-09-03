@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/search5/yona-cli/internal/gitutil"
+	"github.com/yona-projects/yona-cli/internal/gitutil"
 	"github.com/spf13/cobra"
 )
 

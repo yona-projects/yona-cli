@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/search5/yona-cli/cmd"
+	"github.com/yona-projects/yona-cli/cmd"
 )
 
 func main() {

@@ -1,4 +1,4 @@
-module github.com/search5/yona-cli
+module github.com/yona-projects/yona-cli
 
 go 1.25.0
 

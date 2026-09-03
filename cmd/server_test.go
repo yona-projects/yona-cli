@@ -3,7 +3,7 @@ package cmd
 import (
 	"testing"
 
-	"github.com/search5/yona-cli/internal/config"
+	"github.com/yona-projects/yona-cli/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

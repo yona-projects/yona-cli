@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/search5/yona-cli/internal/config"
+	"github.com/yona-projects/yona-cli/internal/config"
 )
 
 // isolateConfigDir는 실제 사용자의 ~/.config/yona-cli를 절대 건드리지 않도록 각 테스트마다
