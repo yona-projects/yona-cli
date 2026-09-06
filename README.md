@@ -129,7 +129,7 @@ yona issue list --repo acme/widgets --token <제한된 토큰>
 | `yona pr reopen <number> [-R ...]` | 다시 열기 |
 | `yona pr diff <number> [-R ...] [--json fields]` | 변경된 파일 목록(pathA/pathB/changeType) |
 | `yona pr comment <number> [-R ...] --body <내용>` | PR 전체에 댓글 작성 |
-| `yona pr review <number> [-R ...]` | 본인을 리뷰어로 등록 (서버 API가 "리뷰어 지정"이 아니라 "자기등록" 방식) |
+| `yona pr review <number> [-R ...]` | 본인을 리뷰어로 등록(`--remove`시 등록 취소, 서버 API가 "리뷰어 지정"이 아니라 "자기등록" 방식) — `--approve`/`--request-changes`/`--comment`(+`--body`) 플래그를 주면 자기등록과 별개로 Approve/Request changes/Comment 판정을 제출한다 |
 | `yona pr checkout <number> [-R ...]` | fromProject/fromBranch로 `git fetch` + `git checkout -B pr-<번호>` (서버 API 불필요) |
 
 ### `yona project`

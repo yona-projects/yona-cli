@@ -473,16 +473,31 @@ func newPRCommentCmd(ctx *cmdContext) *cobra.Command {
 	return cmd
 }
 
+// reviewVerdictLabels는 서버 PullRequestReview.ReviewState 값을 사용자에게 보여줄 한국어 문구로
+// 옮긴다.
+var reviewVerdictLabels = map[string]string{
+	"APPROVE":         "승인",
+	"REQUEST_CHANGES": "변경 요청",
+	"COMMENT":         "코멘트",
+}
+
 // yona-wiki 계획 문서 주의사항 그대로: 이 서버의 addReviewer/removeReviewer는 "리뷰어를 지정"하는
 // 게 아니라 인증된 본인을 리뷰어로 자기등록/등록취소하는 동작이다(PullRequestController.
 // addReviewer/removeReviewer 참고). --remove는 12라운드에서 추가 — 서버에 removeReviewer가
 // 원래부터 있었는데 등록 취소를 할 CLI 명령이 없던 갭을 메운다.
+//
+// yona-wiki P3-15(PR 승인/변경요청 워크플로) — `gh pr review` CLI 관례를 그대로 따라 --approve/
+// --request-changes/--comment(+--body) 세 플래그를 추가했다. 이 세 플래그는 위 자기등록/취소
+// (플래그 없음/--remove)와 완전히 별개 액션이다(서버 PullRequestService.submitReview() — 별도
+// PullRequestReview 이력, 서버 설계 결정 5번) — 같은 명령 호출에 등록/취소 플래그와 판정 플래그를
+// 섞어 쓸 이유가 없어 상호 배타로 막는다(gh pr review도 --approve와 --request-changes를 동시에
+// 받으면 거부하는 것과 동일한 관례).
 func newPRReviewCmd(ctx *cmdContext) *cobra.Command {
-	var repo string
-	var remove bool
+	var repo, body string
+	var remove, approve, requestChanges, comment bool
 	cmd := &cobra.Command{
 		Use:   "review <number>",
-		Short: "본인을 해당 풀 리퀘스트의 리뷰어로 등록(--remove 시 등록 취소)한다",
+		Short: "본인을 해당 풀 리퀘스트의 리뷰어로 등록(--remove 시 등록 취소)하거나, --approve/--request-changes/--comment로 판정을 제출한다",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			owner, project, err := resolveRepo(cmd, repo)
@@ -493,10 +508,47 @@ func newPRReviewCmd(ctx *cmdContext) *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			verdictFlagCount := 0
+			var state string
+			if approve {
+				verdictFlagCount++
+				state = "APPROVE"
+			}
+			if requestChanges {
+				verdictFlagCount++
+				state = "REQUEST_CHANGES"
+			}
+			if comment {
+				verdictFlagCount++
+				state = "COMMENT"
+			}
+			if verdictFlagCount > 1 {
+				return fmt.Errorf("--approve, --request-changes, --comment 중 하나만 지정할 수 있습니다")
+			}
+			if remove && verdictFlagCount > 0 {
+				return fmt.Errorf("--remove는 --approve/--request-changes/--comment와 함께 쓸 수 없습니다")
+			}
+			// gh pr review와 동일한 관례 — Request changes/Comment는 이유/의견을 남기는 판정이라
+			// 본문이 필수다(GitHub API도 이 두 이벤트에는 body를 요구한다). Approve는 본문 없이도
+			// 의미가 온전하다(서버도 body를 optional로 받는다).
+			if (state == "REQUEST_CHANGES" || state == "COMMENT") && body == "" {
+				return fmt.Errorf("--request-changes/--comment에는 --body가 필수입니다")
+			}
+
 			client, err := ctx.newClient()
 			if err != nil {
 				return err
 			}
+
+			if verdictFlagCount > 0 {
+				if _, err := client.SubmitPullRequestReview(cmd.Context(), owner, project, number, api.SubmitPullRequestReviewRequest{State: state, Body: body}); err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "풀 리퀘스트 #%d에 %s 판정을 제출했습니다.\n", number, reviewVerdictLabels[state])
+				return nil
+			}
+
 			if remove {
 				if err := client.RemoveReviewer(cmd.Context(), owner, project, number); err != nil {
 					return err
@@ -513,6 +565,10 @@ func newPRReviewCmd(ctx *cmdContext) *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&repo, "repo", "R", "", `대상 프로젝트, "owner/project" 형식 (생략 시 현재 디렉터리의 git origin remote로 자동감지)`)
 	cmd.Flags().BoolVar(&remove, "remove", false, "리뷰어 등록을 취소한다")
+	cmd.Flags().BoolVar(&approve, "approve", false, "이 풀 리퀘스트를 승인(Approve)한다")
+	cmd.Flags().BoolVar(&requestChanges, "request-changes", false, "변경을 요청(Request changes)한다 (--body 필수)")
+	cmd.Flags().BoolVar(&comment, "comment", false, "판정 없이 코멘트만 남긴다(Comment) (--body 필수)")
+	cmd.Flags().StringVar(&body, "body", "", "리뷰 본문(Approve는 선택, Request changes/Comment는 필수)")
 	return cmd
 }
 

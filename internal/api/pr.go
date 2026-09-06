@@ -184,6 +184,37 @@ func (c *Client) RemoveReviewer(ctx context.Context, owner, project string, numb
 	return c.DoJSON(ctx, http.MethodDelete, path, nil, nil)
 }
 
+// SubmitPullRequestReviewRequest는 web/PullRequestController.kt의
+// SubmitPullRequestReviewRequest와 필드가 동일해야 한다. State는 "APPROVE"/"REQUEST_CHANGES"/
+// "COMMENT" 중 하나(서버의 PullRequestReview.ReviewState).
+type SubmitPullRequestReviewRequest struct {
+	State string `json:"state"`
+	Body  string `json:"body,omitempty"`
+}
+
+// SubmitPullRequestReview는 POST .../pull-requests/{number}/reviews를 호출한다(yona-wiki P3-15,
+// GitHub의 Approve/Request changes/Comment에 대응). AddReviewer/RemoveReviewer(본인을 리뷰어로
+// 자기등록/취소하는 것과는 완전히 별개 개념)와 달리, 여기는 PR 전체에 대한 실제 판정을 새로
+// 남긴다 — 같은 리뷰어가 재판정해도 서버가 매번 새 이력으로 추가한다(cmd/pr.go newPRReviewCmd 참고).
+func (c *Client) SubmitPullRequestReview(ctx context.Context, owner, project string, number int64, req SubmitPullRequestReviewRequest) (map[string]interface{}, error) {
+	var out map[string]interface{}
+	path := fmt.Sprintf("%s/%d/reviews", pullRequestsBasePath(owner, project), number)
+	if err := c.DoJSON(ctx, http.MethodPost, path, req, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GetPullRequestReviews는 GET .../pull-requests/{number}/reviews를 호출한다.
+func (c *Client) GetPullRequestReviews(ctx context.Context, owner, project string, number int64) ([]map[string]interface{}, error) {
+	var out []map[string]interface{}
+	path := fmt.Sprintf("%s/%d/reviews", pullRequestsBasePath(owner, project), number)
+	if err := c.DoJSON(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // setPullRequestAssigneeRequest는 web/PullRequestController.kt의 SetAssigneeRequest와 필드가
 // 동일해야 한다.
 type setPullRequestAssigneeRequest struct {

@@ -155,6 +155,117 @@ func TestPRReview_RemoveUnregistersReviewer(t *testing.T) {
 	assert.Contains(t, out, "등록을 취소")
 }
 
+// yona-wiki P3-15(PR 승인/변경요청 워크플로) — --approve/--request-changes/--comment는 자기등록
+// (플래그 없음/--remove)과 별개의 액션이라 POST .../reviews를 호출해야 한다.
+func TestPRReview_ApproveSubmitsReview(t *testing.T) {
+	isolateConfigDir(t)
+	var gotBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/api/v1/projects/acme/widgets/pull-requests/1/reviews", r.URL.Path)
+		data, _ := io.ReadAll(r.Body)
+		gotBody = string(data)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"state":"APPROVE"}`))
+	}))
+	defer server.Close()
+
+	out, err := runCLI(t, "", "pr", "review", "1", "--approve", "--server", server.URL, "--token", "t", "--repo", "acme/widgets")
+
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"state":"APPROVE"}`, gotBody)
+	assert.Contains(t, out, "승인")
+}
+
+func TestPRReview_RequestChangesRequiresBody(t *testing.T) {
+	isolateConfigDir(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("본문 없이 요청이 서버까지 도달하면 안 된다")
+	}))
+	defer server.Close()
+
+	_, err := runCLI(t, "", "pr", "review", "1", "--request-changes", "--server", server.URL, "--token", "t", "--repo", "acme/widgets")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--body")
+}
+
+func TestPRReview_RequestChangesSubmitsReviewWithBody(t *testing.T) {
+	isolateConfigDir(t)
+	var gotBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/projects/acme/widgets/pull-requests/1/reviews", r.URL.Path)
+		data, _ := io.ReadAll(r.Body)
+		gotBody = string(data)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"state":"REQUEST_CHANGES"}`))
+	}))
+	defer server.Close()
+
+	out, err := runCLI(t, "", "pr", "review", "1", "--request-changes", "--body", "고쳐주세요", "--server", server.URL, "--token", "t", "--repo", "acme/widgets")
+
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"state":"REQUEST_CHANGES","body":"고쳐주세요"}`, gotBody)
+	assert.Contains(t, out, "변경 요청")
+}
+
+func TestPRReview_CommentSubmitsReviewWithBody(t *testing.T) {
+	isolateConfigDir(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/projects/acme/widgets/pull-requests/1/reviews", r.URL.Path)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"state":"COMMENT"}`))
+	}))
+	defer server.Close()
+
+	out, err := runCLI(t, "", "pr", "review", "1", "--comment", "--body", "의견 있습니다", "--server", server.URL, "--token", "t", "--repo", "acme/widgets")
+
+	require.NoError(t, err)
+	assert.Contains(t, out, "코멘트")
+}
+
+func TestPRReview_MultipleVerdictFlagsRejected(t *testing.T) {
+	isolateConfigDir(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("플래그 검증 실패 시 서버까지 요청이 가면 안 된다")
+	}))
+	defer server.Close()
+
+	_, err := runCLI(t, "", "pr", "review", "1", "--approve", "--comment", "--body", "x", "--server", server.URL, "--token", "t", "--repo", "acme/widgets")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "하나만 지정")
+}
+
+func TestPRReview_RemoveWithVerdictFlagRejected(t *testing.T) {
+	isolateConfigDir(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("플래그 검증 실패 시 서버까지 요청이 가면 안 된다")
+	}))
+	defer server.Close()
+
+	_, err := runCLI(t, "", "pr", "review", "1", "--remove", "--approve", "--server", server.URL, "--token", "t", "--repo", "acme/widgets")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--remove")
+}
+
+// 자기 자신의 PR 승인 시도는 서버가 400 + {"error": "..."}로 거부한다(SelfReviewException) —
+// CLI는 그 오류를 그대로 사용자에게 전달해야 한다(APIError.Error()가 이미 처리).
+func TestPRReview_SelfApproveErrorSurfacesServerMessage(t *testing.T) {
+	isolateConfigDir(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"자기 자신의 풀 리퀘스트는 승인하거나 변경을 요청할 수 없습니다."}`))
+	}))
+	defer server.Close()
+
+	_, err := runCLI(t, "", "pr", "review", "1", "--approve", "--server", server.URL, "--token", "t", "--repo", "acme/widgets")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "자기 자신의 풀 리퀘스트는 승인")
+}
+
 func TestPREdit_SendsUpdatedTitleAndBody(t *testing.T) {
 	isolateConfigDir(t)
 	var gotMethod string

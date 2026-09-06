@@ -106,6 +106,44 @@ func TestAddReviewer_PostsToReviewersPathWithNoBody(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// yona-wiki P3-15(PR 승인/변경요청 워크플로) — SubmitPullRequestReview/GetPullRequestReviews.
+func TestSubmitPullRequestReview_PostsToReviewsPathWithBody(t *testing.T) {
+	var gotBody SubmitPullRequestReviewRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/projects/acme/widgets/pull-requests/1/reviews", r.URL.Path)
+		assert.Equal(t, http.MethodPost, r.Method)
+		data, _ := io.ReadAll(r.Body)
+		require.NoError(t, json.Unmarshal(data, &gotBody))
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"state":"APPROVE"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "t")
+	out, err := client.SubmitPullRequestReview(context.Background(), "acme", "widgets", 1, SubmitPullRequestReviewRequest{State: "APPROVE", Body: "LGTM"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "APPROVE", gotBody.State)
+	assert.Equal(t, "LGTM", gotBody.Body)
+	assert.Equal(t, "APPROVE", out["state"])
+}
+
+func TestGetPullRequestReviews_RequestsCorrectPath(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/projects/acme/widgets/pull-requests/1/reviews", r.URL.Path)
+		assert.Equal(t, http.MethodGet, r.Method)
+		_, _ = w.Write([]byte(`[{"state":"APPROVE"}]`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "t")
+	out, err := client.GetPullRequestReviews(context.Background(), "acme", "widgets", 1)
+
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	assert.Equal(t, "APPROVE", out[0]["state"])
+}
+
 func TestUpdatePullRequest_UsesPatchMethodAndSendsBody(t *testing.T) {
 	var gotMethod string
 	var gotBody UpdatePullRequestRequest
