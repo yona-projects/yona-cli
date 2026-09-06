@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/yona-projects/yona-cli/internal/api"
 	"github.com/spf13/cobra"
+	"github.com/yona-projects/yona-cli/internal/api"
 )
 
 // newLabelCmd는 "gh label list/create/edit/delete" 대응 — yona-wiki P3-02 4라운드가 추가한

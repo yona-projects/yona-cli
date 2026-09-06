@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/search5/yona-cli/internal/sshhelper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/yona-projects/yona-cli/internal/sshhelper"
 )
 
 // yona-wiki P3-03 Step4 — 이 파일의 테스트는 시스템 sshd/포트 22와 전혀 무관하다(호스트 시스템을

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/yona-projects/yona-cli/internal/api"
 	"github.com/spf13/cobra"
+	"github.com/yona-projects/yona-cli/internal/api"
 )
 
 // newStatusCmd는 "gh status" 대응 — 최상위 커맨드로 서브커맨드 없이 바로 실행된다(gh status와

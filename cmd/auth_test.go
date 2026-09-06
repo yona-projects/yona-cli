@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yona-projects/yona-cli/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/yona-projects/yona-cli/internal/config"
 )
 
 func TestAuthLogin_WithTokenFlag_SavesConfig(t *testing.T) {

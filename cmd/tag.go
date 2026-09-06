@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/search5/yona-cli/internal/api"
 	"github.com/spf13/cobra"
+	"github.com/yona-projects/yona-cli/internal/api"
 )
 
 // newTagCmd는 "git tag"/GitHub 저장소의 태그 관리에 대응 — yona-wiki P3-10이 추가한

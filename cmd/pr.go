@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/yona-projects/yona-cli/internal/api"
 	"github.com/yona-projects/yona-cli/internal/config"
 	"github.com/yona-projects/yona-cli/internal/gitutil"
 	"github.com/yona-projects/yona-cli/internal/weburl"
-	"github.com/spf13/cobra"
 )
 
 func newPRCmd(ctx *cmdContext) *cobra.Command {

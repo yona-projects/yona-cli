@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/yona-projects/yona-cli/internal/config"
 	"github.com/spf13/cobra"
+	"github.com/yona-projects/yona-cli/internal/config"
 )
 
 // newServerCmd는 "yona server list/use" — gh CLI의 "gh auth switch"에 대응하되, yuna는

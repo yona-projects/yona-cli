@@ -21,8 +21,8 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/search5/yona-cli/internal/sshhelper"
 	"github.com/spf13/cobra"
+	"github.com/yona-projects/yona-cli/internal/sshhelper"
 )
 
 func newInternalCmd() *cobra.Command {

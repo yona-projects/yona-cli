@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/yona-projects/yona-cli/internal/api"
 	"github.com/spf13/cobra"
+	"github.com/yona-projects/yona-cli/internal/api"
 )
 
 // yona-wiki P3-02 13라운드(TASK-0430): 웹훅/권한 "목록 조회"는 Step8.6(7라운드)이 서버에

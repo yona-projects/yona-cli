@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/yona-projects/yona-cli/internal/gitutil"
 	"github.com/spf13/cobra"
+	"github.com/yona-projects/yona-cli/internal/gitutil"
 )
 
 // parseNumberArg는 이슈/PR 번호 인자를 파싱한다.

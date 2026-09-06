@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/yona-projects/yona-cli/internal/config"
 	"github.com/spf13/cobra"
+	"github.com/yona-projects/yona-cli/internal/config"
 	"golang.org/x/term"
 )
 

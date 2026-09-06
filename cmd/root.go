@@ -2,9 +2,9 @@
 package cmd
 
 import (
+	"github.com/spf13/cobra"
 	"github.com/yona-projects/yona-cli/internal/api"
 	"github.com/yona-projects/yona-cli/internal/config"
-	"github.com/spf13/cobra"
 )
 
 // Version은 "yona --version"이 출력하는 값이다. 릴리즈 빌드에서는 goreleaser 등이

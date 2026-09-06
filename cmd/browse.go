@@ -3,10 +3,10 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/spf13/cobra"
 	"github.com/yona-projects/yona-cli/internal/config"
 	"github.com/yona-projects/yona-cli/internal/gitutil"
 	"github.com/yona-projects/yona-cli/internal/weburl"
-	"github.com/spf13/cobra"
 )
 
 // newBrowseCmd는 "gh browse" 대응 — 서버 API 호출 없이 URL만 계산해 브라우저로 연다.
