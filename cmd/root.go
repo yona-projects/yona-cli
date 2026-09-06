@@ -56,6 +56,9 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newAdminCmd(ctx))
 	root.AddCommand(newAPICmd(ctx))
 	root.AddCommand(newStatusCmd(ctx))
+	// yona-wiki P3-03 Step4 — 시스템 sshd 훅 전용, 일반 사용자용이 아니므로 ctx(서버/토큰 플래그)를
+	// 쓰지 않는다(internal/sshhelper 전용 설정 파일을 따로 읽는다).
+	root.AddCommand(newInternalCmd())
 
 	// "completion" 서브커맨드는 Cobra가 서브커맨드를 가진 루트 커맨드에 자동으로 등록한다
 	// (ExecuteC() -> InitDefaultCompletionCmd(), CompletionOptions.DisableDefaultCmd 기본값
