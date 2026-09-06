@@ -49,6 +49,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newPRCmd(ctx))
 	root.AddCommand(newProjectCmd(ctx))
 	root.AddCommand(newLabelCmd(ctx))
+	root.AddCommand(newTagCmd(ctx))
 	root.AddCommand(newSearchCmd(ctx))
 	root.AddCommand(newOrgCmd(ctx))
 	root.AddCommand(newServerCmd(ctx))

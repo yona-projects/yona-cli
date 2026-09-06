@@ -152,6 +152,17 @@ yona issue list --repo acme/widgets --token <제한된 토큰>
 | `yona label edit <id> [-R ...] --name --color --category-id` | 수정 |
 | `yona label delete <id> [-R ...]` | 삭제 |
 
+### `yona tag`
+
+| 명령 | 설명 |
+|---|---|
+| `yona tag list [-R <owner/project>] [--json fields]` | 목록(lightweight/annotated 구분, annotated면 message/tagger 포함) |
+| `yona tag create <name> [-R ...] [--target] [--message]` | 생성 — `--target` 생략 시 기본 브랜치 HEAD, `--message`를 주면 annotated 태그(태거는 API 토큰 소유자), 생략하면 lightweight 태그 |
+| `yona tag delete <name> [-R ...]` | 삭제 (브랜치 삭제와 동일하게 매니저/조직관리자 권한 필요) |
+
+`gh` CLI에는 독립된 최상위 `gh tag`가 없다(태그는 `gh release`에 종속되거나 순수 `git tag`/`git push
+--tags`로 다룬다) — yona는 릴리즈 개념이 없어 이 명령이 태그 관리의 유일한 CLI 경로다.
+
 ### `yona search`
 
 | 명령 | 설명 |
@@ -211,7 +222,7 @@ echo '{"title":"raw body"}' | yona api -X POST --input - /api/v1/projects/acme/w
 ```
 .
 ├── main.go                  # 진입점
-├── cmd/                      # Cobra 명령 트리 (auth/server/browse/issue/pr/project/label/search/org/admin/api)
+├── cmd/                      # Cobra 명령 트리 (auth/server/browse/issue/pr/project/label/tag/search/org/admin/api)
 ├── internal/api/             # yona REST API HTTP 클라이언트
 ├── internal/gitutil/         # 로컬 git 연동 (--repo 자동감지, pr checkout, --web 브라우저 열기)
 ├── internal/weburl/          # 웹 UI 페이지 URL 계산 (--web/browse 공용)
