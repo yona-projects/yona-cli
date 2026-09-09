@@ -18,8 +18,10 @@ type Host struct {
 
 // Config는 config.yml 파일 전체 내용을 표현한다.
 type Config struct {
-	CurrentHost string          `yaml:"current_host,omitempty"`
-	Hosts       map[string]Host `yaml:"hosts,omitempty"`
+	CurrentHost string            `yaml:"current_host,omitempty"`
+	Hosts       map[string]Host   `yaml:"hosts,omitempty"`
+	Settings    map[string]string `yaml:"settings,omitempty"`
+	Aliases     map[string]string `yaml:"aliases,omitempty"`
 }
 
 // ConfigDirEnvVar를 설정하면 기본 설정 디렉터리(~/.config/yona-cli) 대신 이 값을 사용한다.
@@ -120,6 +122,39 @@ func (c *Config) RemoveHost(server string) {
 	if c.CurrentHost == server {
 		c.CurrentHost = ""
 	}
+}
+
+// GetSetting은 "yona config"로 저장된 설정값을 반환한다("yona alias"의 별칭 이름과는 별개
+// 네임스페이스다).
+func (c *Config) GetSetting(key string) (string, bool) {
+	value, ok := c.Settings[key]
+	return value, ok
+}
+
+// SetSetting은 "yona config set"으로 설정값을 저장한다.
+func (c *Config) SetSetting(key, value string) {
+	if c.Settings == nil {
+		c.Settings = map[string]string{}
+	}
+	c.Settings[key] = value
+}
+
+// SetAlias는 "yona alias set"으로 별칭을 등록한다(같은 이름이 있으면 덮어쓴다).
+func (c *Config) SetAlias(name, expansion string) {
+	if c.Aliases == nil {
+		c.Aliases = map[string]string{}
+	}
+	c.Aliases[name] = expansion
+}
+
+// RemoveAlias는 "yona alias delete"로 별칭을 삭제한다. 등록된 적 없는 이름이면 false를
+// 반환한다.
+func (c *Config) RemoveAlias(name string) bool {
+	if _, ok := c.Aliases[name]; !ok {
+		return false
+	}
+	delete(c.Aliases, name)
+	return true
 }
 
 // ErrHostNotRegistered는 "yona server use"에 등록된 적 없는 호스트를 넘겼을 때 반환된다.

@@ -163,3 +163,54 @@ func TestUseHost_ErrorsWhenHostNotRegistered(t *testing.T) {
 
 	assert.ErrorIs(t, err, ErrHostNotRegistered)
 }
+
+func TestSetSettingAndGetSetting_RoundTrips(t *testing.T) {
+	dir := withTempConfigDir(t)
+
+	cfg := &Config{Hosts: map[string]Host{}}
+	cfg.SetSetting("browser", "chromium")
+	require.NoError(t, Save(cfg))
+
+	path := filepath.Join(dir, "config.yml")
+	_, err := os.Stat(path)
+	require.NoError(t, err)
+
+	loaded, err := Load()
+	require.NoError(t, err)
+	value, ok := loaded.GetSetting("browser")
+	assert.True(t, ok)
+	assert.Equal(t, "chromium", value)
+}
+
+func TestGetSetting_MissingKeyReturnsFalse(t *testing.T) {
+	withTempConfigDir(t)
+	cfg := &Config{Hosts: map[string]Host{}}
+
+	_, ok := cfg.GetSetting("browser")
+
+	assert.False(t, ok)
+}
+
+func TestSetAliasAndRemoveAlias_RoundTrips(t *testing.T) {
+	withTempConfigDir(t)
+	cfg := &Config{Hosts: map[string]Host{}}
+
+	cfg.SetAlias("pv", "pr view")
+	require.NoError(t, Save(cfg))
+
+	loaded, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "pr view", loaded.Aliases["pv"])
+
+	removed := loaded.RemoveAlias("pv")
+	assert.True(t, removed)
+	_, ok := loaded.Aliases["pv"]
+	assert.False(t, ok)
+}
+
+func TestRemoveAlias_ReturnsFalseWhenNotRegistered(t *testing.T) {
+	withTempConfigDir(t)
+	cfg := &Config{Hosts: map[string]Host{}}
+
+	assert.False(t, cfg.RemoveAlias("unknown"))
+}

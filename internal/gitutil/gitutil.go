@@ -6,9 +6,12 @@ package gitutil
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+
+	"github.com/yona-projects/yona-cli/internal/config"
 )
 
 // RemoteOriginURL은 현재 작업 디렉터리에서 "git remote get-url origin"을 실행한다. git이 없거나
@@ -97,16 +100,27 @@ func CheckoutNewBranchFromFetchHead(ctx context.Context, stdout, stderr interfac
 	return nil
 }
 
-// OpenInBrowser는 OS별 기본 브라우저로 url을 연다(--web/yona browse 공용).
+// OpenInBrowser는 url을 브라우저로 연다(--web/yona browse 공용). BROWSER 환경변수 또는
+// "yona config set browser <명령>"으로 지정한 값이 있으면 OS 기본 브라우저 대신 그 명령을
+// 쓴다(gh CLI의 browser 설정과 동일한 우선순위 — env가 config보다 우선).
 func OpenInBrowser(url string) error {
 	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", url)
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-	default:
-		cmd = exec.Command("xdg-open", url)
+	if custom := browserOverride(); custom != "" {
+		parts := strings.Fields(custom)
+		if len(parts) == 0 {
+			return fmt.Errorf("browser 설정값이 비어 있습니다")
+		}
+		args := append(append([]string{}, parts[1:]...), url)
+		cmd = exec.Command(parts[0], args...)
+	} else {
+		switch runtime.GOOS {
+		case "darwin":
+			cmd = exec.Command("open", url)
+		case "windows":
+			cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+		default:
+			cmd = exec.Command("xdg-open", url)
+		}
 	}
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("브라우저를 열 수 없습니다: %w", err)
@@ -115,4 +129,18 @@ func OpenInBrowser(url string) error {
 	// 남지 않도록 백그라운드에서 종료를 거둬들인다.
 	go func() { _ = cmd.Wait() }()
 	return nil
+}
+
+// browserOverride는 BROWSER 환경변수, 없으면 설정 파일의 "browser" 값을 반환한다(둘 다
+// 없으면 빈 문자열 — 호출자가 OS 기본 브라우저로 폴백한다).
+func browserOverride() string {
+	if b := os.Getenv("BROWSER"); b != "" {
+		return b
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return ""
+	}
+	value, _ := cfg.GetSetting("browser")
+	return value
 }

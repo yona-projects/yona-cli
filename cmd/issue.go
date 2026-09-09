@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/spf13/cobra"
 	"github.com/yona-projects/yona-cli/internal/api"
@@ -443,37 +444,56 @@ func newIssueTransferCmd(ctx *cmdContext) *cobra.Command {
 	return cmd
 }
 
-// newIssueStatusCmd는 "gh issue status" 최소 버전 대응 — yona-wiki P3-02 4라운드가 추가한
-// GET /api/v1/user/issues/status(담당/작성 이슈 개수·목록)를 그대로 감싼다. mentioned/favorite/
-// shared 필터와 페이지네이션 확장은 서버 자체가 최소 버전이라 다음 라운드로 이월된 상태다.
+// newIssueStatusCmd는 "gh issue status" 대응 — GET /api/v1/user/issues/status를 그대로
+// 감싼다. 서버가 담당(assigned)/작성(created) 외에 댓글단(commented)/멘션된(mentioned)/
+// 즐겨찾기한(favorite)/공유받은(shared) 이슈까지 6개 섹션과 state/filter/pageNum 파라미터를
+// 지원하도록 확장돼(UserIssueStatusRestApiController.kt), CLI도 이를 그대로 배선한다.
 func newIssueStatusCmd(ctx *cmdContext) *cobra.Command {
-	var jsonFields string
+	var state, filter, jsonFields string
+	var page int
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "내가 담당하거나 작성한 이슈 현황을 보여준다",
+		Short: "내 이슈 현황(담당/작성/댓글/멘션/즐겨찾기/공유)을 보여준다",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := ctx.newClient()
 			if err != nil {
 				return err
 			}
-			status, err := client.GetIssueStatus(cmd.Context())
+			status, err := client.GetIssueStatus(cmd.Context(), api.IssueStatusOptions{
+				State:  state,
+				Filter: filter,
+				Page:   page,
+			})
 			if err != nil {
 				return err
 			}
 			if cmd.Flags().Changed("json") {
 				return printJSON(cmd, status, jsonFields)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "담당 중인 이슈 (열림 %d / 닫힘 %d)\n", status.Assigned.OpenCount, status.Assigned.ClosedCount)
-			for _, issue := range status.Assigned.Items {
-				fmt.Fprintf(cmd.OutOrStdout(), "  #%s\t%s\n", num(issue, "number"), str(issue, "title"))
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "\n작성한 이슈 (열림 %d / 닫힘 %d)\n", status.Created.OpenCount, status.Created.ClosedCount)
-			for _, issue := range status.Created.Items {
-				fmt.Fprintf(cmd.OutOrStdout(), "  #%s\t%s\n", num(issue, "number"), str(issue, "title"))
-			}
+			out := cmd.OutOrStdout()
+			printIssueStatusSection(out, "담당 중인 이슈", status.Assigned)
+			printIssueStatusSection(out, "작성한 이슈", status.Created)
+			printIssueStatusSection(out, "댓글단 이슈", status.Commented)
+			printIssueStatusSection(out, "멘션된 이슈", status.Mentioned)
+			printIssueStatusSection(out, "즐겨찾기한 이슈", status.Favorite)
+			printIssueStatusSection(out, "공유받은 이슈", status.Shared)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&jsonFields, "json", "", "콤마로 구분한 필드만 뽑아 JSON으로 출력 (예: --json assigned,created)")
+	cmd.Flags().StringVar(&state, "state", "", "상태로 필터링 (open/closed/all, 생략 시 서버 기본값 open)")
+	cmd.Flags().StringVar(&filter, "filter", "", "제목/본문 키워드로 필터링")
+	cmd.Flags().IntVar(&page, "page", 0, "페이지 번호 (1부터 시작, 생략 시 서버 기본값 1)")
+	cmd.Flags().StringVar(&jsonFields, "json", "", "콤마로 구분한 필드만 뽑아 JSON으로 출력 (예: --json assigned,mentioned)")
 	return cmd
+}
+
+func printIssueStatusSection(out io.Writer, heading string, section api.IssueStatusGroup) {
+	fmt.Fprintf(out, "%s (열림 %d / 닫힘 %d)\n", heading, section.OpenCount, section.ClosedCount)
+	if len(section.Items) == 0 {
+		fmt.Fprintf(out, "  (없음)\n")
+	}
+	for _, issue := range section.Items {
+		fmt.Fprintf(out, "  #%s\t%s\n", num(issue, "number"), str(issue, "title"))
+	}
+	fmt.Fprintln(out)
 }

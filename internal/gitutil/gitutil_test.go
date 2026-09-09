@@ -7,7 +7,15 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/yona-projects/yona-cli/internal/config"
 )
+
+func isolateConfigDir(t *testing.T) {
+	t.Helper()
+	t.Setenv(config.ConfigDirEnvVar, t.TempDir())
+	t.Setenv(config.ServerEnvVar, "")
+	t.Setenv(config.TokenEnvVar, "")
+}
 
 func TestParseOwnerProject_HTTPCloneURL(t *testing.T) {
 	owner, project, err := ParseOwnerProject("http://alice@yona.example.com:8080/acme/widgets.git")
@@ -75,4 +83,33 @@ func TestDetectRepo_ErrorsOutsideGitRepository(t *testing.T) {
 	_, _, err := DetectRepo(context.Background())
 
 	assert.Error(t, err)
+}
+
+func TestBrowserOverride_PrefersEnvOverConfig(t *testing.T) {
+	isolateConfigDir(t)
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	cfg.SetSetting("browser", "chromium")
+	require.NoError(t, config.Save(cfg))
+	t.Setenv("BROWSER", "firefox")
+
+	assert.Equal(t, "firefox", browserOverride())
+}
+
+func TestBrowserOverride_FallsBackToConfigWhenEnvUnset(t *testing.T) {
+	isolateConfigDir(t)
+	t.Setenv("BROWSER", "")
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	cfg.SetSetting("browser", "chromium --new-window")
+	require.NoError(t, config.Save(cfg))
+
+	assert.Equal(t, "chromium --new-window", browserOverride())
+}
+
+func TestBrowserOverride_EmptyWhenNothingConfigured(t *testing.T) {
+	isolateConfigDir(t)
+	t.Setenv("BROWSER", "")
+
+	assert.Empty(t, browserOverride())
 }

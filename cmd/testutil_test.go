@@ -26,7 +26,7 @@ func runCLI(t *testing.T, stdin string, args ...string) (stdout string, err erro
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader(stdin))
-	root.SetArgs(args)
+	root.SetArgs(expandAlias(args, root))
 	err = root.Execute()
 	return out.String(), err
 }

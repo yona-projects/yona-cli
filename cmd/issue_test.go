@@ -345,13 +345,17 @@ func TestIssueTransfer_SendsTargetProject(t *testing.T) {
 	assert.Contains(t, out, "옮겼습니다")
 }
 
-func TestIssueStatus_PrintsAssignedAndCreatedCounts(t *testing.T) {
+func TestIssueStatus_PrintsAllSixSections(t *testing.T) {
 	isolateConfigDir(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v1/user/issues/status", r.URL.Path)
 		_, _ = w.Write([]byte(`{
 			"assigned": {"openCount": 2, "closedCount": 1, "items": [{"number": 1, "title": "a"}]},
-			"created": {"openCount": 0, "closedCount": 0, "items": []}
+			"created": {"openCount": 0, "closedCount": 0, "items": []},
+			"commented": {"openCount": 0, "closedCount": 0, "items": []},
+			"mentioned": {"openCount": 1, "closedCount": 0, "items": [{"number": 2, "title": "b"}]},
+			"favorite": {"openCount": 0, "closedCount": 0, "items": []},
+			"shared": {"openCount": 0, "closedCount": 0, "items": []}
 		}`))
 	}))
 	defer server.Close()
@@ -359,6 +363,25 @@ func TestIssueStatus_PrintsAssignedAndCreatedCounts(t *testing.T) {
 	out, err := runCLI(t, "", "issue", "status", "--server", server.URL, "--token", "t")
 
 	require.NoError(t, err)
-	assert.Contains(t, out, "열림 2")
+	assert.Contains(t, out, "담당 중인 이슈 (열림 2 / 닫힘 1)")
 	assert.Contains(t, out, "#1")
+	assert.Contains(t, out, "멘션된 이슈 (열림 1 / 닫힘 0)")
+	assert.Contains(t, out, "#2")
+	assert.Contains(t, out, "즐겨찾기한 이슈")
+	assert.Contains(t, out, "공유받은 이슈")
+}
+
+func TestIssueStatus_PassesStateAndFilterFlags(t *testing.T) {
+	isolateConfigDir(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "closed", r.URL.Query().Get("state"))
+		assert.Equal(t, "bug", r.URL.Query().Get("filter"))
+		assert.Equal(t, "2", r.URL.Query().Get("pageNum"))
+		_, _ = w.Write([]byte(`{"assigned": {"openCount": 0, "closedCount": 0, "items": []}, "created": {"openCount": 0, "closedCount": 0, "items": []}, "commented": {"openCount": 0, "closedCount": 0, "items": []}, "mentioned": {"openCount": 0, "closedCount": 0, "items": []}, "favorite": {"openCount": 0, "closedCount": 0, "items": []}, "shared": {"openCount": 0, "closedCount": 0, "items": []}}`))
+	}))
+	defer server.Close()
+
+	_, err := runCLI(t, "", "issue", "status", "--state", "closed", "--filter", "bug", "--page", "2", "--server", server.URL, "--token", "t")
+
+	require.NoError(t, err)
 }

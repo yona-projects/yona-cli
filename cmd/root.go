@@ -2,6 +2,9 @@
 package cmd
 
 import (
+	"os"
+	"strings"
+
 	"github.com/spf13/cobra"
 	"github.com/yona-projects/yona-cli/internal/api"
 	"github.com/yona-projects/yona-cli/internal/config"
@@ -57,6 +60,8 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newAdminCmd(ctx))
 	root.AddCommand(newAPICmd(ctx))
 	root.AddCommand(newStatusCmd(ctx))
+	root.AddCommand(newConfigCmd(ctx))
+	root.AddCommand(newAliasCmd(ctx))
 
 	// "completion" 서브커맨드는 Cobra가 서브커맨드를 가진 루트 커맨드에 자동으로 등록한다
 	// (ExecuteC() -> InitDefaultCompletionCmd(), CompletionOptions.DisableDefaultCmd 기본값
@@ -66,5 +71,29 @@ func NewRootCmd() *cobra.Command {
 
 // Execute는 main.go의 진입점이다.
 func Execute() error {
-	return NewRootCmd().Execute()
+	root := NewRootCmd()
+	root.SetArgs(expandAlias(os.Args[1:], root))
+	return root.Execute()
+}
+
+// expandAlias는 "yona alias set"으로 등록한 별칭을 실제 명령행으로 치환한다("yona pv 123" ->
+// "yona pr view 123"). 첫 인자가 이미 등록된 내장 명령이면 손대지 않는다 — alias set 시점에도
+// 내장 명령 이름과의 충돌을 막지만, 이후 새 내장 명령이 추가돼 이름이 겹치게 될 가능성까지
+// 방어하기 위해 여기서도 다시 확인한다.
+func expandAlias(args []string, root *cobra.Command) []string {
+	if len(args) == 0 {
+		return args
+	}
+	if isBuiltinCommand(root, args[0]) {
+		return args
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return args
+	}
+	expansion, ok := cfg.Aliases[args[0]]
+	if !ok {
+		return args
+	}
+	return append(strings.Fields(expansion), args[1:]...)
 }
