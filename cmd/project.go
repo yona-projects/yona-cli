@@ -143,10 +143,14 @@ func newProjectCreateCmd(ctx *cmdContext) *cobra.Command {
 
 // newProjectForkCmd는 "gh repo fork" 대응 — yona-wiki P3-02 4라운드가 추가한
 // POST /api/v1/projects/{owner}/{project}/fork를 그대로 감싼다.
+// newProjectForkCmd — `gh repo fork --org`와 동일하게 --to-owner로 조직(또는 다른 목적지
+// 이름)을 지정할 수 있다. 서버(ProjectServiceImpl.forkProject())가 forker가 그 조직의
+// ORG_ADMIN인지 실제로 검증하므로, 권한이 없으면 명확한 에러 메시지와 함께 거부된다.
 func newProjectForkCmd(ctx *cmdContext) *cobra.Command {
+	var toOwner, toName string
 	cmd := &cobra.Command{
 		Use:   "fork <owner/project>",
-		Short: "프로젝트를 자신의 계정 아래로 fork한다",
+		Short: "프로젝트를 자신의 계정(또는 --to-owner로 지정한 조직) 아래로 fork한다",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			owner, project, err := parseRepo(args[0])
@@ -157,7 +161,10 @@ func newProjectForkCmd(ctx *cmdContext) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			forked, err := client.ForkProject(cmd.Context(), owner, project)
+			forked, err := client.ForkProject(cmd.Context(), owner, project, api.ForkProjectRequest{
+				DestinationOwner: toOwner,
+				DestinationName:  toName,
+			})
 			if err != nil {
 				return err
 			}
@@ -165,6 +172,8 @@ func newProjectForkCmd(ctx *cmdContext) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&toOwner, "to-owner", "", "fork 목적지 계정/조직 이름 (기본값: 본인 계정, 본인이 ORG_ADMIN인 조직만 지정 가능)")
+	cmd.Flags().StringVar(&toName, "to-name", "", "fork된 프로젝트 이름 (기본값: 원본과 동일)")
 	return cmd
 }
 

@@ -91,10 +91,31 @@ func TestForkProject_PostsToForkPath(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL, "t")
-	forked, err := client.ForkProject(context.Background(), "acme", "widgets")
+	forked, err := client.ForkProject(context.Background(), "acme", "widgets", ForkProjectRequest{})
 
 	require.NoError(t, err)
 	assert.Equal(t, "bob", forked["owner"])
+}
+
+func TestForkProject_SendsDestinationOwnerAndName(t *testing.T) {
+	var gotBody ForkProjectRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"owner":"some-org","name":"widgets"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "t")
+	forked, err := client.ForkProject(context.Background(), "acme", "widgets", ForkProjectRequest{
+		DestinationOwner: "some-org",
+		DestinationName:  "renamed-widgets",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "some-org", gotBody.DestinationOwner)
+	assert.Equal(t, "renamed-widgets", gotBody.DestinationName)
+	assert.Equal(t, "some-org", forked["owner"])
 }
 
 func TestUpdateProject_PatchesSettingsPath(t *testing.T) {

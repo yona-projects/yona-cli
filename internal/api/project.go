@@ -62,13 +62,22 @@ func (c *Client) CreateProject(ctx context.Context, req CreateProjectRequest) (*
 	return &out, nil
 }
 
+// ForkProjectRequest는 web/ProjectController.kt의 ForkProjectRequest와 필드가 동일해야 한다.
+// DestinationOwner를 비워두면(기본값) forker 본인 계정으로 fork된다 — 조직 이름을 지정하면 그
+// 조직으로 fork되는데, 서버가 forker가 그 조직의 ORG_ADMIN인지 실제로 검증하므로(아니면 400) 이
+// CLI는 별도 권한 확인 없이 그대로 전달한다(`gh repo fork --org` 대응).
+type ForkProjectRequest struct {
+	DestinationOwner string `json:"destinationOwner,omitempty"`
+	DestinationName  string `json:"destinationName,omitempty"`
+}
+
 // ForkProject는 POST /api/v1/projects/{owner}/{project}/fork를 호출한다. 응답은
-// ProjectController.forkProject()가 그대로 돌려주는 JPA 엔티티라(toProjectNode를 거치지 않음)
-// map으로 느슨하게 받는다.
-func (c *Client) ForkProject(ctx context.Context, owner, project string) (map[string]interface{}, error) {
+// ProjectController.forkProject()가 toRefResponse()로 감싸 돌려주는 DTO(id/owner/name/
+// overview/vcs/scope만)라 map으로 느슨하게 받는다.
+func (c *Client) ForkProject(ctx context.Context, owner, project string, req ForkProjectRequest) (map[string]interface{}, error) {
 	var out map[string]interface{}
 	path := fmt.Sprintf("/api/v1/projects/%s/%s/fork", owner, project)
-	if err := c.DoJSON(ctx, http.MethodPost, path, nil, &out); err != nil {
+	if err := c.DoJSON(ctx, http.MethodPost, path, req, &out); err != nil {
 		return nil, err
 	}
 	return out, nil
