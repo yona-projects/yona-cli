@@ -101,6 +101,7 @@ type UpdateProjectRequest struct {
 	IsReviewEnabled            *bool   `json:"isReviewEnabled,omitempty"`
 	IsMilestoneEnabled         *bool   `json:"isMilestoneEnabled,omitempty"`
 	IsBoardEnabled             *bool   `json:"isBoardEnabled,omitempty"`
+	IsWikiEnabled              *bool   `json:"isWikiEnabled,omitempty"`
 }
 
 // UpdateProject는 PATCH /api/v1/projects/{owner}/{project}/settings를 호출한다("settings"
